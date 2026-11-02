@@ -81,6 +81,36 @@ const template: ComponentDef = {
   outputShape: (config, shape) => shapeWith(shape, config.target, STRING) ?? shape,
 };
 
+const hostLlm: ComponentDef = {
+  type: "host_llm",
+  kind: "processor",
+  summary: "Send a prompt to the host's language model and keep the reply.",
+  properties: {
+    prompt: pointer,
+    target: pointer,
+    system: { type: "string", maxLength: 4000 },
+    max_output_tokens: { type: "integer", minimum: 1, maximum: 8192 },
+  },
+  required: ["prompt", "target"],
+  check(config, shape, ctx) {
+    ctx.requireString("prompt", config.prompt, shape);
+    if (ctx.limits.llm_calls_per_run === 0) {
+      ctx.error("limit_out_of_range", "type", "host_llm cannot run with llm_calls_per_run: 0.");
+    }
+    if (shapeWith(shape, config.target, STRING) === null) {
+      ctx.error("unresolved_pointer", "target", `The parent of ${config.target} does not exist in the data at this step.`);
+    }
+  },
+  outputShape: (config, shape) => shapeWith(shape, config.target, STRING) ?? shape,
+  permissions(_config, draft) {
+    draft.llm = {
+      max_calls_per_run: draft.llmLimits.llm_calls_per_run,
+      max_cost_per_run_usd: draft.llmLimits.llm_cost_per_run_usd ?? null,
+      receives_fetched_content: (draft.llm?.receives_fetched_content ?? false) || draft.fetched,
+    };
+  },
+};
+
 const hostResult: ComponentDef = {
   type: "host_result",
   kind: "output",
@@ -110,7 +140,7 @@ const drop: ComponentDef = {
   },
 };
 
-export const COMPONENTS: ComponentDef[] = [hostTrigger, inject, template, hostResult, drop];
+export const COMPONENTS: ComponentDef[] = [hostTrigger, inject, template, hostLlm, hostResult, drop];
 
 export const COMPONENT_BY_TYPE = new Map(COMPONENTS.map((c) => [c.type, c]));
 

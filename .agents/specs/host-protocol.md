@@ -29,7 +29,8 @@ The host sends `initialize` first; the engine answers nothing else until then (a
   "state_dir": "/Users/me/Library/Application Support/Wriven/workflow",
   "sandbox": "required",
   "capabilities": { "llm": true, "llm_reports_cost": false, "results": true, "live_network_in_tests": false },
-  "ceilings": { "llm_calls_per_run": 10, "runs_per_day": 24, "run_timeout": "10m", "run_memory_mb": 512 }
+  "ceilings": { "llm_calls_per_run": 10, "runs_per_day": 24, "run_timeout": "10m", "run_memory_mb": 512 },
+  "timeouts": { "host_response": "120s" }
 }
 ```
 
@@ -44,7 +45,8 @@ The host sends `initialize` first; the engine answers nothing else until then (a
 | `capabilities.llm_reports_cost` | Whether `host.llm` responses include `usage.cost_usd`. Affects the cost-limit sentence. |
 | `capabilities.results` | Whether the host serves `host.result`. |
 | `capabilities.live_network_in_tests` | Whether `pipeline.test` may use `network: "live"`. |
-| `ceilings` | Optional. Each lowers the engine's compiled-in ceiling; a value above the compiled one is an error. |
+| `ceilings` | Optional. Each lowers the engine's compiled-in ceiling; a value above the compiled one is `invalid_params`. |
+| `timeouts.host_response` | Optional, default `120s`. How long the engine waits for an answer to `host.llm` or `host.result` before it treats the response as lost and repeats the same `idempotency_key` with `attempt: 2`. After a second silence the run fails with `host_error`, reason `no_response`. A slow provider call is therefore repeated too, so a host must answer a key it is still working on by waiting for that same call, not by starting a second one. |
 
 **Response**:
 
@@ -73,7 +75,7 @@ All take and return JSON objects. Errors use the vocabulary below.
 | `components.list` | `{}` | `{ components, pipeline_schema }` | Same as in `initialize`, plus the full JSON Schema of the current format version. |
 | `pipeline.validate` | `{ pipeline }` | `{ valid, errors[], warnings[], permissions?, rendered? }` | Never touches network or state. |
 | `pipeline.test` | `{ pipeline, input?, llm?, fixtures?, network?, clock? }` | `{ status, report, results[], llm_requests[] }` | Runs once in a sandboxed run process with the harness; see [agent-surface](agent-surface.md#pipeline-tests). `network` defaults to `mock`; `live` requires the host capability. |
-| `stream.create` | `{ pipeline, start_paused? }` | `{ stream_id, status: "pending_approval", permissions, permissions_hash, rendered }` | Validates first; returns `invalid_pipeline` on failure. |
+| `stream.create` | `{ pipeline, start_paused?, schedule_description? }` | `{ stream_id, status: "pending_approval", permissions, permissions_hash, rendered }` | Validates first; returns `invalid_pipeline` on failure. |
 | `stream.approve` | `{ stream_id, permissions_hash }` | `{ stream_id, status }` | `conflict` if the hash is stale. Status becomes `active`, or `paused` if `start_paused` was set. |
 | `stream.update` | `{ stream_id, pipeline }` | `{ stream_id, status, permissions, permissions_hash, rendered, diff? }` | Subset → applied, status unchanged. Otherwise `pending_approval` with `diff`. |
 | `stream.pause` | `{ stream_id }` | `{ stream_id, status: "paused" }` | A running run continues to completion; queued triggers for the stream are cancelled. |
@@ -143,6 +145,8 @@ JSON-RPC `error` objects: `code` is an integer in the range -32000 to -32099 for
 | `internal` | -32099 | both | | Bug. Always reported, never retried. |
 
 The engine never retries a `host.llm` error of any kind. It passes `retry_after` through into the report.
+
+A report's `error.kind` may also be one of these, which are never RPC errors because no request failed: `process_exited` (the run process died), `memory_limit`, `unresolved_pointer` and `shape_mismatch` (a pointer that could only be checked at run time), `http_status`, `url_not_allowed`, `fixture_missing`, `feed_invalid`, `state_invalid`.
 
 ## Run report
 

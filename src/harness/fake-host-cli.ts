@@ -4,7 +4,8 @@
 import { parseArgs } from "node:util";
 import { rmSync } from "node:fs";
 import { makeTempStateDir, runConformance } from "./conformance.ts";
-import { FakeHost, selfCommand } from "./fake-host.ts";
+import { selfCommand } from "../self.ts";
+import { FakeHost } from "./fake-host.ts";
 
 export async function fakeHostMain(args: string[]): Promise<number> {
   const { values } = parseArgs({

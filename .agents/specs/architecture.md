@@ -1,6 +1,6 @@
 # Architecture: core, processes, stream lifecycle
 
-Source: [intent and grilling record](../inbox/2026W45/wriven-workflow.md) (decisions 1, 3, 4, 8, 11, 13), [ADR 001](../decisions/001-runtime-bun.md), [ADR 002](../decisions/002-host-owns-keys-clock-history.md), [ADR 004](../decisions/004-isolation-process-seatbelt-proxy.md). Stage: **Design — spec**. Nothing here is implemented.
+Source: [intent and grilling record](../inbox/2026W45/wriven-workflow.md) (decisions 1, 3, 4, 8, 11, 13), [ADR 001](../decisions/001-runtime-bun.md), [ADR 002](../decisions/002-host-owns-keys-clock-history.md), [ADR 004](../decisions/004-isolation-process-seatbelt-proxy.md). Stage: **Design — spec**. Implementation under `src/`.
 
 ## Scope
 

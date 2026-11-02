@@ -2,6 +2,7 @@
 
 import { doctorMain } from "./doctor.ts";
 import { serve } from "./engine/serve.ts";
+import { runMain } from "./executor/run-main.ts";
 import { fakeHostMain } from "./harness/fake-host-cli.ts";
 import { validateMain } from "./pipeline/validate-cli.ts";
 import { versionInfo } from "./version.ts";
@@ -13,6 +14,9 @@ async function main(args: string[]): Promise<number> {
   switch (command) {
     case "serve":
       await serve();
+      return 0;
+    case "--run":
+      await runMain();
       return 0;
     case "validate":
       return validateMain(rest);

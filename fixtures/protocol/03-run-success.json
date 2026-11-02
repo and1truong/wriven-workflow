@@ -1,0 +1,246 @@
+{
+  "name": "A run succeeds",
+  "description": "Create, approve, trigger; the engine asks the host for one model call and one result, then reports.",
+  "fake_host": {
+    "llm": {
+      "responses": [
+        "Hello."
+      ]
+    }
+  },
+  "steps": [
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "h-1",
+        "method": "initialize",
+        "params": {
+          "protocol_version": 1,
+          "host": {
+            "name": "conformance",
+            "version": "0",
+            "display_name": "Wriven"
+          },
+          "clock": "host",
+          "state_dir": "$state_dir",
+          "sandbox": "optional",
+          "capabilities": {
+            "llm": true,
+            "llm_reports_cost": false,
+            "results": true,
+            "live_network_in_tests": false
+          }
+        }
+      }
+    },
+    {
+      "expect": {
+        "id": "h-1",
+        "result": {
+          "protocol_version": 1
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "h-2",
+        "method": "stream.create",
+        "params": {
+          "pipeline": {
+            "format": "wriven-workflow/pipeline@1",
+            "name": "Echo",
+            "input": {
+              "type": "host_trigger"
+            },
+            "processors": [
+              {
+                "id": "prompt",
+                "type": "template",
+                "target": "/prompt",
+                "text": "Say hello to {{/trigger}}"
+              },
+              {
+                "id": "ask",
+                "type": "host_llm",
+                "prompt": "/prompt",
+                "target": "/reply"
+              }
+            ],
+            "output": {
+              "type": "host_result",
+              "title": "Echo",
+              "body": "/reply"
+            },
+            "limits": {
+              "llm_calls_per_run": 1,
+              "runs_per_day": 48,
+              "run_timeout": "5m"
+            }
+          }
+        }
+      }
+    },
+    {
+      "expect": {
+        "id": "h-2",
+        "result": {
+          "stream_id": "<string>",
+          "status": "pending_approval",
+          "permissions": "<any>",
+          "permissions_hash": "<string>",
+          "rendered": "<any>"
+        }
+      },
+      "capture": {
+        "stream": "/result/stream_id",
+        "hash": "/result/permissions_hash"
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "h-3",
+        "method": "stream.approve",
+        "params": {
+          "stream_id": "$stream",
+          "permissions_hash": "$hash"
+        }
+      }
+    },
+    {
+      "expect": {
+        "id": "h-3",
+        "result": {
+          "stream_id": "$stream",
+          "status": "active"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "h-4",
+        "method": "run.trigger",
+        "params": {
+          "stream_id": "$stream"
+        }
+      }
+    },
+    {
+      "expect": {
+        "id": "h-4",
+        "result": {
+          "run_id": "<string>",
+          "status": "queued"
+        }
+      },
+      "capture": {
+        "run": "/result/run_id"
+      }
+    },
+    {
+      "expect": {
+        "method": "run.started",
+        "params": {
+          "run_id": "$run",
+          "stream_id": "$stream",
+          "trigger": "host",
+          "scheduled_for": null,
+          "started_at": "<time>"
+        }
+      }
+    },
+    {
+      "expect": {
+        "method": "host.llm",
+        "id": "<string>",
+        "params": {
+          "run_id": "$run",
+          "stream_id": "$stream",
+          "step_id": "ask",
+          "message_id": "m1",
+          "attempt": 1,
+          "idempotency_key": "$run/ask/m1",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Say hello to host"
+            }
+          ]
+        }
+      },
+      "capture": {
+        "llm_request": "/id"
+      }
+    },
+    {
+      "expect": {
+        "method": "host.result",
+        "id": "<string>",
+        "params": {
+          "run_id": "$run",
+          "stream_id": "$stream",
+          "message_id": "m1",
+          "idempotency_key": "$run/m1",
+          "result": {
+            "title": "Echo",
+            "body": "Hello.",
+            "format": "markdown"
+          }
+        }
+      }
+    },
+    {
+      "expect": {
+        "method": "run.finished",
+        "params": {
+          "report": {
+            "report_version": 1,
+            "run_id": "$run",
+            "stream_id": "$stream",
+            "stream_name": "Echo",
+            "permissions_hash": "$hash",
+            "trigger": "host",
+            "status": "succeeded",
+            "error": null,
+            "started_at": "<time>",
+            "finished_at": "<time>",
+            "llm": {
+              "calls": 1,
+              "requests": [
+                {
+                  "idempotency_key": "$run/ask/m1",
+                  "attempt": 1,
+                  "provider": "fake",
+                  "model": "fake-1",
+                  "duration_ms": "<number>"
+                }
+              ]
+            },
+            "results": [
+              {
+                "idempotency_key": "$run/m1",
+                "ref": "thread:1",
+                "title": "Echo"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "assert_fake_host": {
+        "provider_calls": 1,
+        "results": 1
+      }
+    },
+    {
+      "close_stdin": true
+    },
+    {
+      "expect_exit": 0,
+      "within_ms": 11000
+    }
+  ]
+}

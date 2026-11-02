@@ -1,0 +1,95 @@
+{
+  "name": "Two engines on one state directory",
+  "description": "The second initialize on the same state_dir fails with conflict while the first engine lives.",
+  "steps": [
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "h-1",
+        "method": "initialize",
+        "params": {
+          "protocol_version": 1,
+          "host": {
+            "name": "conformance",
+            "version": "0",
+            "display_name": "Wriven"
+          },
+          "clock": "host",
+          "state_dir": "$state_dir",
+          "sandbox": "optional",
+          "capabilities": {
+            "llm": true,
+            "llm_reports_cost": false,
+            "results": true,
+            "live_network_in_tests": false
+          }
+        }
+      }
+    },
+    {
+      "expect": {
+        "id": "h-1",
+        "result": {
+          "protocol_version": 1
+        }
+      }
+    },
+    {
+      "start_engine": "second"
+    },
+    {
+      "engine": "second",
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "h-1",
+        "method": "initialize",
+        "params": {
+          "protocol_version": 1,
+          "host": {
+            "name": "conformance",
+            "version": "0",
+            "display_name": "Wriven"
+          },
+          "clock": "host",
+          "state_dir": "$state_dir",
+          "sandbox": "optional",
+          "capabilities": {
+            "llm": true,
+            "llm_reports_cost": false,
+            "results": true,
+            "live_network_in_tests": false
+          }
+        }
+      }
+    },
+    {
+      "engine": "second",
+      "expect": {
+        "id": "h-1",
+        "error": {
+          "code": -32004,
+          "data": {
+            "kind": "conflict",
+            "reason": "engine_lock_held"
+          }
+        }
+      }
+    },
+    {
+      "engine": "second",
+      "close_stdin": true
+    },
+    {
+      "engine": "second",
+      "expect_exit": 0,
+      "within_ms": 5000
+    },
+    {
+      "close_stdin": true
+    },
+    {
+      "expect_exit": 0,
+      "within_ms": 11000
+    }
+  ]
+}

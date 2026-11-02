@@ -3,23 +3,31 @@
 
 import { mkdirSync, realpathSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { RpcError } from "../protocol/errors.ts";
-import { Peer, type RequestContext } from "../protocol/peer.ts";
+import { publicComponents } from "../components/definitions.ts";
 import { logLine, type LogLevel } from "../log.ts";
 import { effectiveCeilings, type Ceilings } from "../pipeline/ceilings.ts";
+import { DURATION_PATTERN, parseDuration } from "../pipeline/duration.ts";
+import { DEFAULT_DISPLAY_NAME } from "../pipeline/render.ts";
 import { pipelineSchema } from "../pipeline/schema.ts";
 import { validatePipeline, type ValidationContext } from "../pipeline/validate.ts";
-import { DEFAULT_DISPLAY_NAME } from "../pipeline/render.ts";
-import { publicComponents } from "../components/definitions.ts";
+import { RpcError } from "../protocol/errors.ts";
+import { Peer, type RequestContext } from "../protocol/peer.ts";
+import { selfCommand } from "../self.ts";
+import { newStreamId, StreamStore, type Manifest } from "../state/streams.ts";
 import { ENGINE_NAME, ENGINE_VERSION, PIPELINE_FORMATS, PROTOCOL_VERSIONS, REPORT_VERSION } from "../version.ts";
 import { tryLock } from "./lock.ts";
+import { RunQueue } from "./run-queue.ts";
 
 export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
+export const DEFAULT_HOST_RESPONSE_MS = 120_000;
 
 export interface EngineOptions {
   write(line: string): void;
   exit(code: number): void;
   onLine?(direction: "in" | "out", line: string): void;
+  now?(): Date;
+  // Argv prefix that re-executes the binary; tests running in-process point it at the compiled one.
+  command?: string[];
 }
 
 export class Engine {
@@ -28,8 +36,12 @@ export class Engine {
   private context!: ValidationContext;
   private releaseLock: (() => void) | null = null;
   private stopping: Promise<void> | null = null;
+  private streams!: StreamStore;
+  private queue!: RunQueue;
+  private readonly now: () => Date;
 
   constructor(private readonly options: EngineOptions) {
+    this.now = options.now ?? (() => new Date());
     this.peer = new Peer({
       write: options.write,
       idPrefix: "e-",
@@ -61,6 +73,24 @@ export class Engine {
         return this.listComponents(params);
       case "pipeline.validate":
         return this.validate(params);
+      case "stream.create":
+        return this.createStream(params);
+      case "stream.approve":
+        return this.approveStream(params);
+      case "stream.pause":
+        return this.pauseStream(params);
+      case "stream.resume":
+        return this.resumeStream(params);
+      case "stream.delete":
+        return this.deleteStream(params);
+      case "stream.list":
+        return { streams: this.streams.all().map((m) => this.streamRow(m)) };
+      case "stream.get":
+        return this.getStream(params);
+      case "run.trigger":
+        return this.triggerRun(params);
+      case "run.cancel":
+        return this.queue.cancel(requireString(params, "run_id"));
       case "shutdown":
         return this.shutdown(params);
       default:
@@ -84,6 +114,7 @@ export class Engine {
       throw new RpcError("invalid_params", 'sandbox must be "required" or "optional".', { reason: "invalid_sandbox" });
     }
     const ceilings: Ceilings = effectiveCeilings(params.ceilings);
+    const hostResponseMs = readDuration(params.timeouts?.host_response, DEFAULT_HOST_RESPONSE_MS, "timeouts.host_response");
     const stateDir = checkStateDir(params.state_dir);
     const release = tryLock(join(stateDir, "engine.lock"));
     if (!release) {
@@ -101,6 +132,18 @@ export class Engine {
       sandboxAvailable,
       llmReportsCost: capabilities.llm_reports_cost === true,
     };
+    this.streams = new StreamStore(join(stateDir, "streams"));
+    this.queue = new RunQueue({
+      hostPeer: this.peer,
+      command: this.options.command ?? selfCommand(),
+      now: this.now,
+      hostResponseMs,
+      llmReportsCost: this.context.llmReportsCost,
+      onStarted: (job, startedAt) => {
+        this.peer.notify("run.started", { run_id: job.run_id, stream_id: job.stream_id, trigger: job.trigger, scheduled_for: job.scheduled_for, started_at: startedAt });
+      },
+      emitFinished: (report) => this.peer.notify("run.finished", { report }),
+    });
     this.initialized = true;
     return {
       protocol_version: params.protocol_version,
@@ -111,7 +154,7 @@ export class Engine {
       ceilings,
       components: publicComponents(),
       tools: [],
-      streams: [],
+      streams: this.streams.all().map((m) => this.streamRow(m)),
     };
   }
 
@@ -138,20 +181,157 @@ export class Engine {
     };
   }
 
+  private requireValid(pipeline: unknown) {
+    const result = validatePipeline(pipeline, this.context);
+    if (!result.valid) {
+      throw new RpcError("invalid_pipeline", `The pipeline is not valid: ${result.errors[0]?.message ?? "see errors"}`, { errors: result.errors });
+    }
+    return result;
+  }
+
+  private createStream(params: any): unknown {
+    const result = this.requireValid(params?.pipeline);
+    const now = this.now().toISOString();
+    const description = typeof params.schedule_description === "string" ? params.schedule_description : undefined;
+    const manifest: Manifest = {
+      stream_id: newStreamId(),
+      name: params.pipeline.name,
+      status: "pending_approval",
+      start_paused: params.start_paused === true,
+      ...(description ? { schedule_description: description } : {}),
+      pipeline: params.pipeline,
+      permissions: result.permissions,
+      permissions_hash: result.permissions_hash,
+      rendered: withDescription(result.rendered, description),
+      rendered_version: 1,
+      created_at: now,
+      updated_at: now,
+    };
+    this.streams.save(manifest);
+    return {
+      stream_id: manifest.stream_id,
+      status: manifest.status,
+      permissions: manifest.permissions,
+      permissions_hash: manifest.permissions_hash,
+      rendered: manifest.rendered,
+    };
+  }
+
+  private manifest(params: any): Manifest {
+    const streamId = requireString(params, "stream_id");
+    const manifest = this.streams.get(streamId);
+    if (!manifest) throw new RpcError("not_found", `There is no stream with the id ${streamId}.`);
+    return manifest;
+  }
+
+  private save(manifest: Manifest, changes: Partial<Manifest>): Manifest {
+    const updated = { ...manifest, ...changes, updated_at: this.now().toISOString() };
+    this.streams.save(updated);
+    return updated;
+  }
+
+  private approveStream(params: any): unknown {
+    const manifest = this.manifest(params);
+    if (params.permissions_hash !== manifest.permissions_hash) {
+      throw new RpcError("conflict", "These are not the permissions this stream has now; show the current ones and ask again.", {
+        reason: "stale_hash",
+        current: manifest.permissions_hash,
+      });
+    }
+    if (manifest.status !== "pending_approval") return { stream_id: manifest.stream_id, status: manifest.status };
+    const updated = this.save(manifest, { status: manifest.start_paused ? "paused" : "active" });
+    return { stream_id: updated.stream_id, status: updated.status };
+  }
+
+  private async pauseStream(params: any): Promise<unknown> {
+    const manifest = this.manifest(params);
+    if (manifest.status === "pending_approval") {
+      throw new RpcError("conflict", "A stream waiting for approval cannot be paused.", { reason: "pending_approval" });
+    }
+    const updated = manifest.status === "paused" ? manifest : this.save(manifest, { status: "paused" });
+    await this.queue.cancelStream(manifest.stream_id, "paused", false);
+    return { stream_id: updated.stream_id, status: "paused" };
+  }
+
+  private resumeStream(params: any): unknown {
+    const manifest = this.manifest(params);
+    if (manifest.status === "pending_approval") {
+      throw new RpcError("conflict", "A stream waiting for approval cannot be resumed.", { reason: "pending_approval" });
+    }
+    const updated = manifest.status === "active" ? manifest : this.save(manifest, { status: "active" });
+    return { stream_id: updated.stream_id, status: "active", next_run: null };
+  }
+
+  private async deleteStream(params: any): Promise<unknown> {
+    const manifest = this.manifest(params);
+    await this.queue.cancelStream(manifest.stream_id, "stream_deleted", true);
+    this.streams.remove(manifest.stream_id);
+    return { stream_id: manifest.stream_id, status: "deleted" };
+  }
+
+  private getStream(params: any): unknown {
+    const m = this.manifest(params);
+    return {
+      stream_id: m.stream_id,
+      name: m.name,
+      status: m.status,
+      pipeline: m.pipeline,
+      permissions: m.permissions,
+      permissions_hash: m.permissions_hash,
+      rendered: m.rendered,
+      created_at: m.created_at,
+      updated_at: m.updated_at,
+      next_run: null,
+    };
+  }
+
+  private streamRow(m: Manifest) {
+    return { stream_id: m.stream_id, name: m.name, status: m.status, permissions_hash: m.permissions_hash, next_run: null, permission_sentences: m.rendered };
+  }
+
+  private triggerRun(params: any): unknown {
+    const manifest = this.manifest(params);
+    if (this.queue.stopping) throw new RpcError("conflict", "The engine is shutting down.", { reason: "shutting_down" });
+    if (manifest.status === "pending_approval") {
+      throw new RpcError("permission_denied", "This stream's permissions have not been approved.");
+    }
+    if (manifest.status === "paused") throw new RpcError("conflict", "This stream is paused.", { reason: "paused" });
+    const scheduledFor = typeof params.scheduled_for === "string" ? params.scheduled_for : null;
+    return this.queue.enqueue(manifest, { trigger: "host", scheduled_for: scheduledFor, collapsible: true });
+  }
+
   private async shutdown(params: any): Promise<unknown> {
-    await this.stop(DEFAULT_SHUTDOWN_TIMEOUT_MS, params?.timeout);
+    await this.stop(readDuration(params?.timeout, DEFAULT_SHUTDOWN_TIMEOUT_MS, "timeout"));
     setTimeout(() => this.options.exit(0), 0);
     return {};
   }
 
-  private stop(defaultTimeoutMs: number, _timeout?: unknown): Promise<void> {
+  private stop(timeoutMs: number): Promise<void> {
     this.stopping ??= (async () => {
-      void defaultTimeoutMs;
+      await this.queue?.drain(timeoutMs);
       this.releaseLock?.();
       this.releaseLock = null;
     })();
     return this.stopping;
   }
+}
+
+function withDescription(rendered: string[], description: string | undefined): string[] {
+  return description ? [rendered[0]!, description, ...rendered.slice(1)] : rendered;
+}
+
+function requireString(params: any, field: string): string {
+  const value = params?.[field];
+  if (typeof value !== "string" || value === "") throw new RpcError("invalid_params", `${field} is required.`, { reason: `missing_${field}` });
+  return value;
+}
+
+function readDuration(value: unknown, fallback: number, field: string): number {
+  if (value === undefined) return fallback;
+  if (typeof value !== "string" || !new RegExp(DURATION_PATTERN).test(value)) {
+    throw new RpcError("invalid_params", `${field} must be a duration such as 10s.`, { reason: "invalid_duration" });
+  }
+  return parseDuration(value);
 }
 
 function checkStateDir(stateDir: unknown): string {

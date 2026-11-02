@@ -5,7 +5,8 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FakeHost, selfCommand, type LlmScript, type ResultScript } from "./fake-host.ts";
+import { selfCommand } from "../self.ts";
+import { FakeHost, type LlmScript, type ResultScript } from "./fake-host.ts";
 
 interface Step {
   engine?: string;
