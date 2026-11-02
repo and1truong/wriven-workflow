@@ -118,9 +118,9 @@ Engine-wide ceilings (the upper ends above) are compiled in and reported by `com
 
 ## Validation
 
-`pipeline.validate` returns either `{ "valid": true, "permissions": {...}, "warnings": [...] }` or `{ "valid": false, "errors": [ { "path": "/processors/2/key", "code": "unknown_field" | "schema" | "unresolved_pointer" | "limit_out_of_range" | "missing_limits" | "input_not_allowed" | "schedule_requires_engine_clock" | "url_not_allowed" | "shape_mismatch", "message": "English sentence" } ] }`.
+`pipeline.validate` returns either `{ "valid": true, "permissions": {...}, "warnings": [...] }` or `{ "valid": false, "errors": [ { "path": "/processors/2/key", "code": "unknown_field" | "schema" | "unresolved_pointer" | "limit_out_of_range" | "missing_limits" | "input_not_allowed" | "schedule_requires_engine_clock" | "url_not_allowed" | "shape_mismatch" | "capability_missing", "message": "English sentence" } ] }`.
 
-Checks, in order: JSON Schema of the format version; component schemas; component ordering constraints (`parse_feed` needs a `/body` upstream; `host_llm.prompt` must point at a string-producing field; `collect` after `dedupe` is allowed, before is a warning "dedupe after collect sees one key per batch"); URL rules; pointer resolution against declared shapes; limits; a `host_llm` present with `llm_calls_per_run: 0` is an error. Warnings never block.
+Checks, in order: JSON Schema of the format version; component schemas; component ordering constraints (`parse_feed` needs a `/body` upstream; `host_llm.prompt` must point at a string-producing field; `collect` after `dedupe` is allowed, before is a warning "dedupe after collect sees one key per batch"); URL rules; pointer resolution against declared shapes; limits; components the host's `capabilities` rule out (`capability_missing`); a `host_llm` present with `llm_calls_per_run: 0` is an error. Warnings never block.
 
 Validation never touches the network or the state directory.
 

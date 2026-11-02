@@ -1,0 +1,38 @@
+{
+  "name": "Validate",
+  "description": "A valid pipeline returns permissions and sentences; three invalid variants return coded errors with paths.",
+  "steps": [
+    { "send": { "jsonrpc": "2.0", "id": "h-1", "method": "initialize", "params": {
+      "protocol_version": 1, "host": { "name": "conformance", "version": "0", "display_name": "Wriven" }, "clock": "host", "state_dir": "$state_dir", "sandbox": "optional",
+      "capabilities": { "llm": true, "llm_reports_cost": false, "results": true, "live_network_in_tests": false }
+    } } },
+    { "expect": { "id": "h-1", "result": { "protocol_version": 1 } } },
+    { "send": { "jsonrpc": "2.0", "id": "h-2", "method": "pipeline.validate", "params": { "pipeline": {
+      "format": "wriven-workflow/pipeline@1", "name": "Note",
+      "input": { "type": "host_trigger" },
+      "processors": [ { "id": "note", "type": "template", "target": "/note", "text": "Run {{/run_id}}" } ],
+      "output": { "type": "host_result", "title": "Note", "body": "/note" },
+      "limits": { "llm_calls_per_run": 0, "runs_per_day": 2, "run_timeout": "5m" }
+    } } } },
+    { "expect": { "id": "h-2", "result": { "valid": true, "errors": [], "permissions": { "version": 1, "runs": { "kind": "host" } }, "permissions_hash": "<string>", "rendered": [
+      "Runs: when Wriven asks.", "Fetches from: nowhere.", "Writes results to: Wriven.", "Limits: at most 2 runs per day; each run stops after 5 minutes.",
+      "Does not: run programs, read or write your files, listen for connections, send data anywhere not listed above, or hold any API key.", "<string>"
+    ] } } },
+    { "send": { "jsonrpc": "2.0", "id": "h-3", "method": "pipeline.validate", "params": { "pipeline": {
+      "format": "wriven-workflow/pipeline@1", "name": "No limits", "input": { "type": "host_trigger" }, "processors": [], "output": { "type": "drop" }
+    } } } },
+    { "expect": { "id": "h-3", "result": { "valid": false, "errors": [ { "path": "/limits", "code": "missing_limits", "message": "<string>" } ] } } },
+    { "send": { "jsonrpc": "2.0", "id": "h-4", "method": "pipeline.validate", "params": { "pipeline": {
+      "format": "wriven-workflow/pipeline@1", "name": "Too many calls", "input": { "type": "host_trigger" }, "processors": [], "output": { "type": "drop" },
+      "limits": { "llm_calls_per_run": 51, "runs_per_day": 2, "run_timeout": "5m" }
+    } } } },
+    { "expect": { "id": "h-4", "result": { "valid": false, "errors": [ { "path": "/limits/llm_calls_per_run", "code": "limit_out_of_range", "message": "<string>" } ] } } },
+    { "send": { "jsonrpc": "2.0", "id": "h-5", "method": "pipeline.validate", "params": { "pipeline": {
+      "format": "wriven-workflow/pipeline@1", "name": "Typo", "input": { "type": "host_trigger" }, "processors": [], "output": { "type": "drop", "on_eror": "skip" },
+      "limits": { "llm_calls_per_run": 0, "runs_per_day": 2, "run_timeout": "5m" }
+    } } } },
+    { "expect": { "id": "h-5", "result": { "valid": false, "errors": [ { "path": "/output/on_eror", "code": "unknown_field", "message": "<string>" } ] } } },
+    { "close_stdin": true },
+    { "expect_exit": 0, "within_ms": 5000 }
+  ]
+}

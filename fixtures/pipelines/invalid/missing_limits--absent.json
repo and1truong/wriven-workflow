@@ -1,0 +1,1 @@
+{ "format": "wriven-workflow/pipeline@1", "name": "Fixture", "input": { "type": "host_trigger" }, "processors": [], "output": { "type": "drop" } }

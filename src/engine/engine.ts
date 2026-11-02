@@ -6,6 +6,11 @@ import { join } from "node:path";
 import { RpcError } from "../protocol/errors.ts";
 import { Peer, type RequestContext } from "../protocol/peer.ts";
 import { logLine, type LogLevel } from "../log.ts";
+import { effectiveCeilings, type Ceilings } from "../pipeline/ceilings.ts";
+import { pipelineSchema } from "../pipeline/schema.ts";
+import { validatePipeline, type ValidationContext } from "../pipeline/validate.ts";
+import { DEFAULT_DISPLAY_NAME } from "../pipeline/render.ts";
+import { publicComponents } from "../components/definitions.ts";
 import { ENGINE_NAME, ENGINE_VERSION, PIPELINE_FORMATS, PROTOCOL_VERSIONS, REPORT_VERSION } from "../version.ts";
 import { tryLock } from "./lock.ts";
 
@@ -20,6 +25,7 @@ export interface EngineOptions {
 export class Engine {
   readonly peer: Peer;
   private initialized = false;
+  private context!: ValidationContext;
   private releaseLock: (() => void) | null = null;
   private stopping: Promise<void> | null = null;
 
@@ -52,7 +58,9 @@ export class Engine {
     }
     switch (method) {
       case "components.list":
-        return { components: [], pipeline_schema: {} };
+        return this.listComponents(params);
+      case "pipeline.validate":
+        return this.validate(params);
       case "shutdown":
         return this.shutdown(params);
       default:
@@ -69,6 +77,13 @@ export class Engine {
     if (this.initialized) {
       throw new RpcError("conflict", "The engine is already initialized.", { reason: "already_initialized" });
     }
+    if (params.clock !== "host" && params.clock !== "engine") {
+      throw new RpcError("invalid_params", 'clock must be "host" or "engine".', { reason: "invalid_clock" });
+    }
+    if (params.sandbox !== undefined && params.sandbox !== "required" && params.sandbox !== "optional") {
+      throw new RpcError("invalid_params", 'sandbox must be "required" or "optional".', { reason: "invalid_sandbox" });
+    }
+    const ceilings: Ceilings = effectiveCeilings(params.ceilings);
     const stateDir = checkStateDir(params.state_dir);
     const release = tryLock(join(stateDir, "engine.lock"));
     if (!release) {
@@ -76,17 +91,50 @@ export class Engine {
     }
     this.releaseLock = release;
     mkdirSync(join(stateDir, "streams"), { recursive: true, mode: 0o700 });
+    const sandboxAvailable = Bun.which("sandbox-exec") !== null;
+    const capabilities = params.capabilities ?? {};
+    this.context = {
+      clock: params.clock,
+      capabilities: { llm: capabilities.llm === true, results: capabilities.results === true },
+      ceilings,
+      displayName: typeof params.host?.display_name === "string" && params.host.display_name !== "" ? params.host.display_name : DEFAULT_DISPLAY_NAME,
+      sandboxAvailable,
+      llmReportsCost: capabilities.llm_reports_cost === true,
+    };
     this.initialized = true;
     return {
       protocol_version: params.protocol_version,
       engine: { name: ENGINE_NAME, version: ENGINE_VERSION },
       pipeline_formats: PIPELINE_FORMATS,
       report_version: REPORT_VERSION,
-      sandbox: { available: false, mechanism: "none" },
-      ceilings: {},
-      components: [],
+      sandbox: { available: sandboxAvailable, mechanism: sandboxAvailable ? "seatbelt" : "none" },
+      ceilings,
+      components: publicComponents(),
       tools: [],
       streams: [],
+    };
+  }
+
+  private listComponents(params: any): unknown {
+    const all = publicComponents();
+    return {
+      components: params?.kind ? all.filter((c) => c.kind === params.kind) : all,
+      format: PIPELINE_FORMATS[0],
+      ceilings: this.context.ceilings,
+      pipeline_schema: pipelineSchema(),
+    };
+  }
+
+  private validate(params: any): unknown {
+    const result = validatePipeline(params?.pipeline, this.context);
+    if (!result.valid) return { valid: false, errors: result.errors, warnings: result.warnings };
+    return {
+      valid: true,
+      errors: [],
+      warnings: result.warnings,
+      permissions: result.permissions,
+      permissions_hash: result.permissions_hash,
+      rendered: result.rendered,
     };
   }
 

@@ -1,0 +1,9 @@
+{
+  "format": "wriven-workflow/pipeline@1", "name": "Fixture",
+  "input": { "type": "host_trigger" },
+  "processors": [
+    { "id": "note", "type": "template", "target": "/note", "text": "Run {{/run_id}} started by {{/trigger}}." }
+  ],
+  "output": { "type": "host_result", "title": "Note", "body": "/note", "format": "text" },
+  "limits": { "llm_calls_per_run": 0, "runs_per_day": 2, "run_timeout": "5m" }
+}

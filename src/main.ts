@@ -3,9 +3,10 @@
 import { doctorMain } from "./doctor.ts";
 import { serve } from "./engine/serve.ts";
 import { fakeHostMain } from "./harness/fake-host-cli.ts";
+import { validateMain } from "./pipeline/validate-cli.ts";
 import { versionInfo } from "./version.ts";
 
-const USAGE = "usage: wriven-workflow serve | fake-host [--conformance <dir>] | doctor | --version";
+const USAGE = "usage: wriven-workflow serve | validate <file> | fake-host [--conformance <dir>] | doctor | --version";
 
 async function main(args: string[]): Promise<number> {
   const [command, ...rest] = args;
@@ -13,6 +14,8 @@ async function main(args: string[]): Promise<number> {
     case "serve":
       await serve();
       return 0;
+    case "validate":
+      return validateMain(rest);
     case "fake-host":
       return fakeHostMain(rest);
     case "doctor":
