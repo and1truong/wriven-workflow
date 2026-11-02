@@ -1,0 +1,28 @@
+{
+  "name": "Initialize and shutdown",
+  "description": "The smallest conversation: handshake, then an explicit shutdown. The engine exits 0.",
+  "steps": [
+    { "send": { "jsonrpc": "2.0", "id": "h-1", "method": "initialize", "params": {
+      "protocol_version": 1,
+      "host": { "name": "conformance", "version": "0", "display_name": "Wriven" },
+      "clock": "host",
+      "state_dir": "$state_dir",
+      "sandbox": "optional",
+      "capabilities": { "llm": true, "llm_reports_cost": false, "results": true, "live_network_in_tests": false }
+    } } },
+    { "expect": { "jsonrpc": "2.0", "id": "h-1", "result": {
+      "protocol_version": 1,
+      "engine": { "name": "wriven-workflow", "version": "<string>" },
+      "pipeline_formats": ["wriven-workflow/pipeline@1"],
+      "report_version": 1,
+      "sandbox": "<any>",
+      "ceilings": "<any>",
+      "components": "<any>",
+      "tools": "<any>",
+      "streams": []
+    } } },
+    { "send": { "jsonrpc": "2.0", "id": "h-2", "method": "shutdown", "params": {} } },
+    { "expect": { "jsonrpc": "2.0", "id": "h-2", "result": {} } },
+    { "expect_exit": 0, "within_ms": 5000 }
+  ]
+}

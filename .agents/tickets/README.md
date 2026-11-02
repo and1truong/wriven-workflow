@@ -6,7 +6,7 @@ All derive from the [specs](../specs/README.md); none is started.
 
 ## Engine v0
 
-1. [engine-01-serve-handshake-fake-host](engine-01-serve-handshake-fake-host.md) — `serve` speaks JSON-RPC over stdio, `initialize`/`shutdown`, exits on stdin EOF; `fake-host`; `--version`; `doctor` (presence check). Fixture 1.
+1. [engine-01-serve-handshake-fake-host](completed/2026w45/engine-01-serve-handshake-fake-host.md) — `serve` speaks JSON-RPC over stdio, `initialize`/`shutdown`, exits on stdin EOF; `fake-host`; `--version`; `doctor` (presence check). Fixture 1.
 2. [engine-02-format-validate-components](engine-02-format-validate-components.md) — pipeline format and JSON Schema, `pipeline.validate` with coded errors, limits and ceilings, permissions object/hash/sentences for `host_trigger`, `template`, `host_result`, `inject`, `drop`. Fixture 2.
 3. [engine-03-minimal-run-host-llm-host-result](engine-03-minimal-run-host-llm-host-result.md) — **the first end-to-end run**: `host_trigger → template → host_llm → host_result` in an (unsandboxed) child process against the fake host, with stream lifecycle, run queue, idempotency keys, cancellation, run report. Fixtures 3, 4, 5, 7, 8.
 4. [engine-04-sandbox-seatbelt-watchdog](engine-04-sandbox-seatbelt-watchdog.md) — Seatbelt profile from permissions, measured Bun allowances, memory and time watchdogs, `sandbox` policy, `doctor --self-test`. Fixture 10.

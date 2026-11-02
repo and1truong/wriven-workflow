@@ -117,6 +117,10 @@ JSON-RPC `error` objects: `code` is an integer in the range -32000 to -32099 for
 
 | kind | code | Direction | `data` extras | Meaning |
 | --- | --- | --- | --- | --- |
+| `parse_error` | -32700 | both | | A line is not valid JSON. |
+| `invalid_request` | -32600 | both | | Not a JSON-RPC request, or a line over the 4 MiB limit. |
+| `method_not_found` | -32601 | both | | No such method. |
+| `invalid_params` | -32602 | both | `reason?` | Params do not fit the method, including a host ceiling above the compiled-in one. |
 | `not_initialized` | -32001 | engine→host | | Request before `initialize`. |
 | `unsupported_version` | -32002 | engine→host | `supported: [int]` | Protocol version mismatch. |
 | `invalid_state_dir` | -32003 | engine→host | `reason` | Missing, wrong owner, wrong mode. |
