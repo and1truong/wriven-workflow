@@ -97,6 +97,7 @@ Specified in [composition](composition.md), which owns their behaviour; this lis
 Containers hold step lists; a nested step has the same shape as a top-level processor. At most 4 containers nest and a pipeline has at most 64 steps in all; both are compiled in and reported by `components.list` as `structure`. In the published schema, nested lists and conditions are `$ref`s into `#/$defs/processor` and `#/$defs/condition`.
 
 - **`for_each`**: runs `steps` on each message as a batch of one, outputs in input order. Permission: none of its own.
+- **`switch`**: routes each message to the first case whose `when` holds; unmatched go to `default` or pass through. Permission: none of its own.
 - **`filter`**: keeps the messages for which `keep_if`, a [`condition`](composition.md#condition), is true. Permission: none.
 - **`split`**: one message per element of the array at `field`. Permission: none.
 - **`log`**: appends a line per message to the run report's `logs`. Permission: none.

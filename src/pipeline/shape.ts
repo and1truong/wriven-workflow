@@ -57,3 +57,18 @@ export function shapeWith(shape: Shape, pointer: string, value: Shape): Shape | 
 export function describeShape(shape: Shape): string {
   return shape.kind === "object" ? "an object" : shape.kind === "array" ? "an array" : `a ${shape.kind}`;
 }
+
+// The shape of data that may have come from either side, as after `switch` or `try`. Objects merge key
+// by key; a key on one side only, or kinds that differ, become unknown and are checked at run time.
+export function mergeShapes(a: Shape, b: Shape): Shape {
+  if (a.kind === "unknown" || b.kind === "unknown" || a.kind !== b.kind) return UNKNOWN;
+  if (a.kind === "array" && b.kind === "array") return { kind: "array", items: mergeShapes(a.items, b.items) };
+  if (a.kind === "object" && b.kind === "object") {
+    const props: Record<string, Shape> = {};
+    for (const key of new Set([...Object.keys(a.props), ...Object.keys(b.props)])) {
+      props[key] = Object.hasOwn(a.props, key) && Object.hasOwn(b.props, key) ? mergeShapes(a.props[key]!, b.props[key]!) : UNKNOWN;
+    }
+    return object(props);
+  }
+  return a;
+}

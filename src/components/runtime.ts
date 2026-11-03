@@ -8,6 +8,7 @@ import { httpFetch, type Fetcher } from "./http-fetch.ts";
 import { parseFeed } from "./parse-feed.ts";
 import { DEDUPE_DEFAULTS, SPLIT_DEFAULT_MAX } from "./definitions.ts";
 import { evaluate } from "../pipeline/condition.ts";
+import { preservesIds } from "../pipeline/tree.ts";
 import type { RunState } from "../executor/run-state.ts";
 
 export interface StepContext {
@@ -172,9 +173,26 @@ const forEach: Processor = async (config, batch, ctx) => {
   return outputs.flat();
 };
 
+const switchProcessor: Processor = async (config, batch, ctx) => {
+  const groups: Message[][] = config.cases.map(() => []);
+  const unmatched: Message[] = [];
+  for (const message of batch) {
+    const index = (config.cases as any[]).findIndex((c) => evaluate(c.when, message, ctx.now()));
+    (index >= 0 ? groups[index]! : unmatched).push(message);
+  }
+  const outputs: Message[][] = [];
+  for (const [i, group] of groups.entries()) outputs.push(group.length > 0 ? await ctx.runSteps(config.cases[i].steps, group) : []);
+  outputs.push(config.default === undefined ? unmatched : unmatched.length > 0 ? await ctx.runSteps(config.default, unmatched) : []);
+  const out = outputs.flat();
+  if (!preservesIds(config)) return out;
+  // Every list kept ids, so each output is an input message and input order can come back.
+  const position = new Map(batch.map((m, i) => [m.id, i]));
+  return out.sort((a, b) => position.get(a.id)! - position.get(b.id)!);
+};
+
 const filter: Processor = async (config, batch, ctx) => batch.filter((message) => evaluate(config.keep_if, message, ctx.now()));
 
-const PROCESSORS: Record<string, Processor> = { http_fetch: httpFetch, parse_feed: parseFeed, dedupe, collect, template, host_llm: hostLlm, filter, split, log, sleep, for_each: forEach };
+const PROCESSORS: Record<string, Processor> = { http_fetch: httpFetch, parse_feed: parseFeed, dedupe, collect, template, host_llm: hostLlm, filter, split, log, sleep, for_each: forEach, switch: switchProcessor };
 
 export function processorFor(type: string): Processor {
   const processor = PROCESSORS[type];

@@ -1,6 +1,6 @@
 # composition-05: `switch` and shape merging
 
-**Spec:** [composition](../specs/composition.md#switch) (`switch`, shape merging, message identity).
+**Spec:** [composition](../../../specs/composition.md#switch) (`switch`, shape merging, message identity).
 
 **To build:**
 - **Shape merging**, used here and in composition-07: objects merge key by key; a key on one side only becomes `unknown`; differing kinds become `unknown`.
@@ -10,7 +10,7 @@
   - Output order: input order when every branch preserves ids. Otherwise case order, then `default`, then unmatched.
   - Output shape is the merge of all branches.
 - **`components.list`.** States the no-`default` pass-through in one sentence.
-- **Spec update.** [pipeline-format](../specs/pipeline-format.md): `switch`.
+- **Spec update.** [pipeline-format](../../../specs/pipeline-format.md): `switch`.
 
 **Blocked by:** [composition-03](completed/2026w45/composition-03-nested-steps-for-each.md).
 
@@ -27,8 +27,10 @@
   - a pointer to a field both write validates statically.
 - **Regression:** v0 example hashes are unchanged.
 
-**Status:** open
+**Status:** done 2026-11-03
 
-- [ ] Shape merge helper with tests
-- [ ] `switch` schema, routing, ordering rule
-- [ ] Tests; pipeline-format updated
+- [x] Shape merge helper with tests (`mergeShapes` in `src/pipeline/shape.ts`)
+- [x] `switch` schema, routing, ordering rule
+- [x] Tests (`tests/switch.test.ts`); pipeline-format updated
+
+A case whose group is empty does not run its steps, so its nested steps report no invocation for that run.

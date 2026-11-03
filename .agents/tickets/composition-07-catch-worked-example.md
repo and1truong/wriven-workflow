@@ -11,7 +11,7 @@
 - **Worked example.** The spec's example runs end to end under `pipeline.test` and is added as a valid fixture with an embedded test.
 - **Spec update.** [permissions](../specs/permissions.md): the new field and sentence.
 
-**Blocked by:** [composition-05](composition-05-switch-shape-merging.md), [composition-06](composition-06-unit-failures-try.md). The worked example also needs [composition-01](completed/2026w45/composition-01-condition-filter.md) and [composition-04](completed/2026w45/composition-04-concurrent-host-llm.md).
+**Blocked by:** [composition-05](completed/2026w45/composition-05-switch-shape-merging.md), [composition-06](composition-06-unit-failures-try.md). The worked example also needs [composition-01](completed/2026w45/composition-01-condition-filter.md) and [composition-04](completed/2026w45/composition-04-concurrent-host-llm.md).
 
 **Verification:**
 - **`catch` behaviour:**

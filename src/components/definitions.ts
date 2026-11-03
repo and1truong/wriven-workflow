@@ -1,7 +1,7 @@
 // The registry of components v0 knows about.
 
 import { findPlaceholders } from "../pipeline/pointer.ts";
-import { describeShape, NUMBER, object, shapeAt, shapeWith, STRING, UNKNOWN } from "../pipeline/shape.ts";
+import { describeShape, mergeShapes, NUMBER, object, shapeAt, shapeWith, STRING, UNKNOWN, type Shape } from "../pipeline/shape.ts";
 import { hostOfUrl, urlProblem } from "../pipeline/urls.ts";
 import { POINTER_PATTERN } from "../pipeline/pointer.ts";
 import { DURATION_PATTERN, groupThousands, parseDuration } from "../pipeline/duration.ts";
@@ -17,6 +17,7 @@ const pointer = { type: "string", pattern: POINTER_PATTERN, patternMessage: "Thi
 // with better messages, and a $ref into the pipeline schema's $defs when published.
 const conditionRef = { "x-ref": "condition" };
 const stepList = { type: "array", minItems: 1, items: { "x-ref": "processor" } };
+const optionalSteps = { type: "array", items: { "x-ref": "processor" } };
 
 export const retrySchema = {
   type: "object",
@@ -240,6 +241,40 @@ const forEach: ComponentDef = {
   },
 };
 
+const switchDef: ComponentDef = {
+  type: "switch",
+  kind: "processor",
+  summary:
+    "Send each message to the first case whose when is true and run that case's steps on the messages it got. Unmatched messages go to default, or pass through unchanged when there is no default. Output keeps input order when every list keeps message ids; otherwise case by case, then default.",
+  properties: {
+    cases: {
+      type: "array",
+      minItems: 1,
+      maxItems: 16,
+      items: { type: "object", additionalProperties: false, required: ["when", "steps"], properties: { when: conditionRef, steps: optionalSteps } },
+    },
+    default: optionalSteps,
+  },
+  required: ["cases"],
+  preservesIds: true,
+  children: (config) => [
+    ...(Array.isArray(config.cases) ? config.cases : []).map((c: any, i: number) => ({ field: `cases/${i}/steps`, steps: c?.steps })),
+    ...(config.default !== undefined ? [{ field: "default", steps: config.default }] : []),
+  ],
+  walk(config, shape, ctx) {
+    let out: Shape | null = null;
+    const join = (next: Shape) => {
+      out = out === null ? next : mergeShapes(out, next);
+    };
+    (config.cases as any[]).forEach((c, i) => {
+      checkCondition(c.when, `cases/${i}/when`, shape, ctx);
+      join(ctx.checkSteps(`cases/${i}/steps`, c.steps, shape));
+    });
+    join(config.default !== undefined ? ctx.checkSteps("default", config.default, shape) : shape);
+    return out!;
+  },
+};
+
 const DEFAULT_REMEMBER = "30d";
 const DEFAULT_MAX_KEYS = 10_000;
 
@@ -370,7 +405,7 @@ const drop: ComponentDef = {
 
 export const DEDUPE_DEFAULTS = { remember: DEFAULT_REMEMBER, max_keys: DEFAULT_MAX_KEYS };
 
-export const COMPONENTS: ComponentDef[] = [hostTrigger, schedule, inject, httpFetch, parseFeed, dedupe, collect, template, hostLlm, filter, split, log, sleep, forEach, hostResult, drop];
+export const COMPONENTS: ComponentDef[] = [hostTrigger, schedule, inject, httpFetch, parseFeed, dedupe, collect, template, hostLlm, filter, split, log, sleep, forEach, switchDef, hostResult, drop];
 
 export const COMPONENT_BY_TYPE = new Map(COMPONENTS.map((c) => [c.type, c]));
 
