@@ -1,6 +1,6 @@
 # test-mocks-01: replace a step with fixed messages or replies
 
-**Spec:** [test-mocks](../specs/test-mocks.md) (format, what a mocked step does, ids and metadata, interaction with the other test parameters, validation, run report), [agent-surface](../specs/agent-surface.md#pipeline-tests).
+**Spec:** [test-mocks](../../../specs/test-mocks.md) (format, what a mocked step does, ids and metadata, interaction with the other test parameters, validation, run report), [agent-surface](../../../specs/agent-surface.md#pipeline-tests).
 
 **To build:** unconditional mocks, the shorthand forms only: `{ "messages": […] }` on any processor step and `{ "replies": […] }` on `host_llm`. `cases`, `when` and `fail` come in test-mocks-02.
 - **Schema.** `mocks` on `pipeline.test` params and on `tests[]` entries, keyed by processor step id. Ceilings (500 messages, 100 replies) reported by `components.list`.
@@ -16,9 +16,9 @@
   - `meta` is the incoming message's, overlaid with the mock's;
   - `host_llm` renders its prompt, records it in `llm_requests[]`, counts it against `llm_calls_per_run` before answering, and writes the next reply to `target`, the last repeating. `llm` does not answer a mocked step.
 - **Report.** `steps[].mocked: true`, with `in`, `out`, `dropped`, `duration_ms` counting what the mock did. Additive to the report schema in `schemas/`.
-- **Spec updates**, the parts of the spec's "Changes to other specs" this ticket covers: [agent-surface](../specs/agent-surface.md) (`mocks` in the parameter table and `tests[]`, `mocked` in reports, the fixture-authoring risk), [host-protocol](../specs/host-protocol.md) (`mocks` in `pipeline.test` params), [pipeline-format](../specs/pipeline-format.md) (`tests[].mocks`, the new validation codes).
+- **Spec updates**, the parts of the spec's "Changes to other specs" this ticket covers: [agent-surface](../../../specs/agent-surface.md) (`mocks` in the parameter table and `tests[]`, `mocked` in reports, the fixture-authoring risk), [host-protocol](../../../specs/host-protocol.md) (`mocks` in `pipeline.test` params), [pipeline-format](../../../specs/pipeline-format.md) (`tests[].mocks`, the new validation codes).
 
-**Blocked by:** nothing open. It uses nested steps and id preservation from [composition-03](completed/2026w45/composition-03-nested-steps-for-each.md).
+**Blocked by:** nothing open. It uses nested steps and id preservation from [composition-03](composition-03-nested-steps-for-each.md).
 
 **Verification:**
 - **Behaviour**, on `fixtures/pipelines/valid/feed-digest-filter.json`:
@@ -34,9 +34,11 @@
   - mocks on both a `for_each` and a step inside it give `mock_unreachable`.
 - **Regression:** `permissions_hash` is the same with and without `tests[].mocks`; every existing fixture and embedded test passes unchanged.
 
-**Status:** open
+**Status:** done 2026-11-03
 
-- [ ] Schema, ceilings, `components.list`
-- [ ] Validation codes and the narrowing walk
-- [ ] Mocked steps in the run process; `host_llm` replies with budget and `llm_requests[]`
-- [ ] Report `mocked`; specs updated
+- [x] Schema, ceilings, `components.list` (`mocks` in its result)
+- [x] Validation codes and the narrowing walk (`src/pipeline/mocks.ts`; `walker` in `validate.ts` takes per-step shape overrides)
+- [x] Mocked steps in the run process; `host_llm` replies with budget and `llm_requests[]`
+- [x] Report `mocked`; specs updated (agent-surface, host-protocol, pipeline-format), and `mocks` in the `workflow_test_pipeline` tool schema
+
+How it is built, from the design notes the session that wrote the spec left: `host_llm` replies are answered by the harness, keyed by step id, so the supervisor still counts the call and records the prompt and the run process does not change for them; only `messages` mocks travel in `RunInit`. The harness sets `steps[].mocked` from the report. Mocks with issues of their own still replace their step in the other mocks' narrowing walks, so a missing field is blamed on one mock only. Mocked `http_fetch` ids are `<id>.<url index>`, with `.<n>` added when a case emits several. Invalid `pipeline.test` mocks fail with `invalid_pipeline`, reason `invalid_mocks`. Tests: `tests/test-mocks.test.ts`, started from that session's draft.

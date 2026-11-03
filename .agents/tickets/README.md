@@ -22,7 +22,7 @@ From [composition](../specs/composition.md). Each ticket updates the specs its "
 
 From [test-mocks](../specs/test-mocks.md). Each ticket updates the specs it names, in the same commit. Order: 01, then 02. Independent of the composition chain, except that 02's `try` check needs composition-06.
 
-1. [test-mocks-01-step-mocks](test-mocks-01-step-mocks.md) — `mocks` keyed by step id: fixed `messages` on any processor, `replies` on `host_llm`; the narrowing shape check; `mocked` in the report.
+1. [test-mocks-01-step-mocks](completed/2026w45/test-mocks-01-step-mocks.md) (done) — `mocks` keyed by step id: fixed `messages` on any processor, `replies` on `host_llm`; the narrowing shape check; `mocked` in the report.
 2. [test-mocks-02-cases-fail](test-mocks-02-cases-fail.md) — `cases` chosen by `when` per unit, `fail` with declared catchable codes, `mock_unmatched`; the spec's worked example.
 
 ## Engine v0

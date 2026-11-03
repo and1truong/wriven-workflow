@@ -11,7 +11,7 @@
 - **Worked example** added as a second embedded test in `fixtures/pipelines/valid/feed-digest-filter.json`.
 - **Spec updates:** [host-protocol](../specs/host-protocol.md) (`mock_unmatched` among the report-only error kinds), [composition](../specs/composition.md) (`mock_unmatched` among what `try` cannot catch; the test-harness section points to per-step `replies`), [agent-surface](../specs/agent-surface.md) and [pipeline-format](../specs/pipeline-format.md) (`cases`, `fail`).
 
-**Blocked by:** [test-mocks-01](test-mocks-01-step-mocks.md). The `try` case below needs [composition-06](composition-06-unit-failures-try.md); whichever of the two lands second adds it.
+**Blocked by:** [test-mocks-01](completed/2026w45/test-mocks-01-step-mocks.md). The `try` case below needs [composition-06](completed/2026w45/composition-06-unit-failures-try.md); whichever of the two lands second adds it.
 
 **Verification:**
 - **Behaviour:**

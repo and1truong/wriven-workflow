@@ -48,6 +48,8 @@ export interface RunJob {
   fixtures?: RunInit["fixtures"];
   // Set in `pipeline.test`: nothing is read from disk or written back.
   initial_state?: RunInit["initial_state"];
+  // Set in `pipeline.test`: steps replaced by fixed messages.
+  mocks?: RunInit["mocks"];
 }
 
 const DEFAULT_MEMORY_SAMPLE_MS = 250;
@@ -192,7 +194,7 @@ export class RunProcess {
     const { run_id, stream_id, pipeline, trigger, scheduled_for, clock, input_override } = this.job;
     const proxy = this.proxy ? { port: this.proxy.port, token: this.proxyToken } : null;
     const state_path = stream_id ? join(this.env.streamDir(stream_id), "state.json") : null;
-    return { run_id, stream_id, pipeline, trigger, scheduled_for, clock, input_override, proxy, cpu_limit_s: Math.max(CPU_LIMIT_MIN_S, Math.ceil((this.timeoutMs() / 1000) * CPU_LIMIT_FACTOR)), state_path, initial_state: this.job.initial_state ?? null, fixtures: this.job.fixtures ?? null, ...(this.env.test?.hook ? { test_hook: this.env.test.hook } : {}) };
+    return { run_id, stream_id, pipeline, trigger, scheduled_for, clock, input_override, proxy, cpu_limit_s: Math.max(CPU_LIMIT_MIN_S, Math.ceil((this.timeoutMs() / 1000) * CPU_LIMIT_FACTOR)), state_path, initial_state: this.job.initial_state ?? null, fixtures: this.job.fixtures ?? null, mocks: this.job.mocks ?? null, ...(this.env.test?.hook ? { test_hook: this.env.test.hook } : {}) };
   }
 
   private spawn(): void {

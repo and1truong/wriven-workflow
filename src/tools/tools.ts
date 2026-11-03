@@ -44,6 +44,11 @@ export const TOOLS: ToolDefinition[] = [
         network: { type: "string", description: "mock uses fixtures. live fetches for real, only if the host allows it.", enum: ["mock", "live"] },
         clock: { type: "string", description: "An RFC 3339 instant the run believes is now." },
         state: { type: "object", description: "Keys the run should believe it has already seen: { seen: { step_id: { key: RFC 3339 } } }." },
+        mocks: {
+          type: "object",
+          description:
+            "Replace processor steps by id: { step_id: { messages: [{ data, meta? }] } } emitted per unit instead of running the step (per URL for http_fetch), or { replies: [text] } for a host_llm, whose prompt is still rendered and counted. Mock messages need only the fields later steps read.",
+        },
         run_embedded: { type: "boolean", description: "Run the pipeline's own tests[] instead, and report each." },
       },
       required: ["pipeline"],

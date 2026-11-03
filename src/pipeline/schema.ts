@@ -35,6 +35,7 @@ const TEST_SCHEMA: JsonSchema = {
     network: { enum: ["mock", "live"] },
     clock: { type: "string" },
     state: { type: "object" },
+    mocks: { type: "object" },
     expect: {
       type: "object",
       additionalProperties: false,

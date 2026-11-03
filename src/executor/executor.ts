@@ -2,7 +2,7 @@
 // input emits one batch, so "the batch was acknowledged" and "the run succeeded" are the same event.
 
 import type { Fetcher } from "../components/http-fetch.ts";
-import { deliver, processorFor, type FailureHandler, type StepContext } from "../components/runtime.ts";
+import { deliver, processorFor, runMock, type FailureHandler, type StepContext } from "../components/runtime.ts";
 import { RpcError } from "../protocol/errors.ts";
 import { StepError, type Message, type RunInit, type RunOutcome } from "./messages.ts";
 import { RunState } from "./run-state.ts";
@@ -110,7 +110,8 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
       // on_error: skip is a try with an empty catch around this one step, reported as v0 did.
       const handler: FailureHandler | null =
         config.on_error === "skip" ? (unit, err, stepId) => world.warn({ step_id: stepId, message_id: unit.id, code: err.kind, message: err.message }) : onFailure;
-      out = await processorFor(config.type)(config, batch, context(config.id, handler, iterations));
+      const mock = init.mocks?.[config.id];
+      out = mock ? runMock(config, mock, batch) : await processorFor(config.type)(config, batch, context(config.id, handler, iterations));
     } catch (err) {
       failedAt ??= config.id;
       throw err;

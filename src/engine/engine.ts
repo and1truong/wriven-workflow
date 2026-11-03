@@ -11,13 +11,14 @@ import { DEFAULT_DISPLAY_NAME, renderPermissions } from "../pipeline/render.ts";
 import { canonicalJson } from "../pipeline/canonical.ts";
 import { REPORT_SCHEMA } from "../report.ts";
 import { pipelineSchema } from "../pipeline/schema.ts";
+import { checkMocks, MOCK_LIMITS } from "../pipeline/mocks.ts";
 import { CONDITION_DOC } from "../pipeline/condition.ts";
 import { STRUCTURE_LIMITS } from "../pipeline/tree.ts";
 
 // The most host.llm requests a host may ask to have outstanding at once for one run.
 const MAX_LLM_CONCURRENCY = 8;
 import { isSubset, sentenceDiff } from "../pipeline/subset.ts";
-import { validatePipeline, type ValidationContext } from "../pipeline/validate.ts";
+import { validatePipeline, walker, type ValidationContext } from "../pipeline/validate.ts";
 import { RpcError } from "../protocol/errors.ts";
 import { Peer, type RequestContext } from "../protocol/peer.ts";
 import { selfCommand } from "../self.ts";
@@ -262,6 +263,7 @@ export class Engine {
       report_schema: REPORT_SCHEMA,
       condition: CONDITION_DOC,
       structure: STRUCTURE_LIMITS,
+      mocks: MOCK_LIMITS,
     };
   }
 
@@ -287,9 +289,14 @@ export class Engine {
   }
 
   private async testPipeline(params: any, ctx: RequestContext): Promise<unknown> {
-    const result = validatePipeline(params?.pipeline, { ...this.context, testing: true });
+    const testing = { ...this.context, testing: true };
+    const result = validatePipeline(params?.pipeline, testing);
     if (!result.valid) {
       throw new RpcError("invalid_pipeline", `The pipeline is not valid: ${result.errors[0]?.message ?? "see errors"}`, { errors: result.errors });
+    }
+    if (params.mocks !== undefined) {
+      const issues = checkMocks(params.pipeline, params.mocks, "/mocks", walker(params.pipeline, testing));
+      if (issues.length > 0) throw new RpcError("invalid_pipeline", `The mocks are not valid: ${issues[0]!.message}`, { errors: issues, reason: "invalid_mocks" });
     }
     this.requireSandbox();
     const once = async (test: Partial<TestParams>) => {
@@ -310,7 +317,7 @@ export class Engine {
       return running;
     };
     if (params.run_embedded !== true) {
-      return once({ input: params.input, llm: params.llm, fixtures: params.fixtures, network: params.network, clock: params.clock, state: params.state });
+      return once({ input: params.input, llm: params.llm, fixtures: params.fixtures, network: params.network, clock: params.clock, state: params.state, mocks: params.mocks });
     }
     const tests: Array<{ name: string; passed: boolean; failures: string[]; status: string }> = [];
     for (const test of (params.pipeline.tests ?? []) as EmbeddedTest[]) {

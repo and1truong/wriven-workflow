@@ -7,6 +7,7 @@ import type { StateFile } from "../executor/run-state.ts";
 import type { Permissions } from "../pipeline/permissions.ts";
 import type { RunReport } from "../report.ts";
 import { allSteps } from "../pipeline/tree.ts";
+import type { Mock } from "../pipeline/mocks.ts";
 import { RunProcess, type RunJob, type SupervisorEnv } from "../supervisor/supervisor.ts";
 import { truncateResult } from "../tools/truncate.ts";
 
@@ -23,6 +24,8 @@ export interface TestParams {
   network?: "mock" | "live";
   clock?: string;
   state?: StateFile;
+  // Already checked with the pipeline (checkMocks).
+  mocks?: Record<string, Mock>;
 }
 
 export interface TestOutcome {
@@ -68,6 +71,11 @@ export async function runPipelineTest(params: TestParams, env: SupervisorEnv, si
   const llmRequests: TestOutcome["llm_requests"] = [];
   const responses = params.llm?.mode === "mock" ? params.llm.responses! : null;
   let answered = 0;
+  // host_llm mocks are answered here, so the supervisor still counts the call and records the prompt;
+  // only mocks that emit messages travel to the run process.
+  const mocks = params.mocks ?? {};
+  const replied = new Map<string, number>();
+  const messageMocks = Object.fromEntries(Object.entries(mocks).filter(([, m]) => m.messages !== undefined)) as RunJob["mocks"];
   const overrides: Message[] | null = params.input?.messages
     ? params.input.messages.map((m, i) => ({ id: `m${i + 1}`, data: structuredClone(m.data), meta: { ...m.meta } }))
     : null;
@@ -86,6 +94,7 @@ export async function runPipelineTest(params: TestParams, env: SupervisorEnv, si
     input_override: overrides,
     fixtures: params.network === "live" ? null : (params.fixtures ?? {}),
     initial_state: params.state ?? { version: 1, seen: {} },
+    mocks: messageMocks,
   };
   const process = new RunProcess(job, {
     ...env,
@@ -93,7 +102,15 @@ export async function runPipelineTest(params: TestParams, env: SupervisorEnv, si
       async llm(request: any) {
         const prompt: string = request.messages[0].content;
         llmRequests.push({ step_id: request.step_id, message_id: request.message_id, ...(request.system !== undefined ? { system: request.system } : {}), prompt });
-        const text = responses ? responses[Math.min(answered++, responses.length - 1)]! : `[mock reply] ${prompt}`;
+        const mocked = mocks[request.step_id]?.replies;
+        let text: string;
+        if (mocked) {
+          const used = replied.get(request.step_id) ?? 0;
+          replied.set(request.step_id, used + 1);
+          text = mocked[Math.min(used, mocked.length - 1)]!;
+        } else {
+          text = responses ? responses[Math.min(answered++, responses.length - 1)]! : `[mock reply] ${prompt}`;
+        }
         return { text, usage: { input_tokens: 0, output_tokens: 0 }, provider: "mock", model: "mock", finished: "stop" };
       },
       async result(request: any) {
@@ -107,6 +124,7 @@ export async function runPipelineTest(params: TestParams, env: SupervisorEnv, si
   signal.addEventListener("abort", onAbort);
   try {
     const report = await process.run();
+    for (const step of report.steps) if (Object.hasOwn(mocks, step.step_id)) step.mocked = true;
     if (signal.aborted) throw new RpcError("cancelled", "The test was cancelled.", { reason: "cancelled" });
     return truncateResult({ status: report.status, report, results, llm_requests: llmRequests, logs: report.logs ?? [], clamped: clampedSteps(params.pipeline) }, MAX_TEST_RESULT_BYTES);
   } finally {
@@ -123,6 +141,7 @@ export interface EmbeddedTest {
   network?: TestParams["network"];
   clock?: string;
   state?: StateFile;
+  mocks?: Record<string, Mock>;
   expect: {
     status: RunReport["status"];
     results_count?: number;

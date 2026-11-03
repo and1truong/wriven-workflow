@@ -3,7 +3,7 @@
 import { findPlaceholders, pointerGet, pointerSet } from "../pipeline/pointer.ts";
 import { parseDuration } from "../pipeline/duration.ts";
 import { RpcError } from "../protocol/errors.ts";
-import { StepError, type Message } from "../executor/messages.ts";
+import { StepError, type Message, type RunInit } from "../executor/messages.ts";
 import { httpFetch, type Fetcher } from "./http-fetch.ts";
 import { parseFeed } from "./parse-feed.ts";
 import { DEDUPE_DEFAULTS, SPLIT_DEFAULT_MAX } from "./definitions.ts";
@@ -316,6 +316,27 @@ const workflowProcessor: Processor = async (config, batch, ctx) => {
   }
   return batch.filter((m) => !failed.has(m.id));
 };
+
+// A step replaced by a test mock: it does not run, and per unit emits the mock's messages, numbered as
+// the real component numbers what it emits. Spec: .agents/specs/test-mocks.md.
+export function runMock(config: any, mock: NonNullable<RunInit["mocks"]>[string], batch: Message[]): Message[] {
+  const out: Message[] = [];
+  const emit = (meta: Record<string, string>, id: (k: number, of: number) => string, extra: Record<string, string> = {}) => {
+    mock.messages.forEach((m, k) => out.push({ id: id(k, mock.messages.length), data: structuredClone(m.data), meta: { ...meta, ...m.meta, ...extra } }));
+  };
+  if (config.type === "http_fetch") {
+    for (const message of batch) {
+      (config.urls as string[]).forEach((url, i) => emit(message.meta, (k, of) => (of === 1 ? `${message.id}.${i}` : `${message.id}.${i}.${k}`), { source_url: url }));
+    }
+  } else if (config.type === "collect") {
+    if (batch.length > 0) emit(batch[0]!.meta, (k, of) => (of === 1 ? `${batch[0]!.id}.c` : `${batch[0]!.id}.c.${k}`));
+  } else if (preservesIds(config)) {
+    for (const message of batch) emit(message.meta, () => message.id);
+  } else {
+    for (const message of batch) emit(message.meta, (k) => `${message.id}.${k}`);
+  }
+  return out;
+}
 
 const filter: Processor = async (config, batch, ctx) => perMessage(batch, ctx, (message) => (evaluate(config.keep_if, message, ctx.now()) ? [message] : []));
 

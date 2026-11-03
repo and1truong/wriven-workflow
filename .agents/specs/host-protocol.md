@@ -75,7 +75,7 @@ All take and return JSON objects. Errors use the vocabulary below.
 | --- | --- | --- | --- |
 | `components.list` | `{ kind? }` | `{ components, format, ceilings, pipeline_schema, report_schema }` | Same as in `initialize`, plus the full JSON Schemas of the current format and the run report. |
 | `pipeline.validate` | `{ pipeline }` | `{ valid, errors[], warnings[], permissions?, rendered? }` | Never touches network or state. |
-| `pipeline.test` | `{ pipeline, input?, llm?, fixtures?, network?, clock?, state?, run_embedded? }` | `{ status, report, results[], llm_requests[] }` | Runs once in a sandboxed run process with the harness; see [agent-surface](agent-surface.md#pipeline-tests). `network` defaults to `mock`; `live` requires the host capability. |
+| `pipeline.test` | `{ pipeline, input?, llm?, fixtures?, network?, clock?, state?, mocks?, run_embedded? }` | `{ status, report, results[], llm_requests[] }` | Runs once in a sandboxed run process with the harness; see [agent-surface](agent-surface.md#pipeline-tests). `network` defaults to `mock`; `live` requires the host capability. |
 | `stream.create` | `{ pipeline, start_paused?, schedule_description? }` | `{ stream_id, status: "pending_approval", permissions, permissions_hash, rendered }` | Validates first; returns `invalid_pipeline` on failure. |
 | `stream.approve` | `{ stream_id, permissions_hash }` | `{ stream_id, status }` | `conflict` if the hash is stale. Status becomes `active`, or `paused` if `start_paused` was set. |
 | `stream.update` | `{ stream_id, pipeline }` | `{ stream_id, status, permissions, permissions_hash, rendered, diff? }` | Subset → applied, status unchanged. Otherwise `pending_approval` with `diff`. |

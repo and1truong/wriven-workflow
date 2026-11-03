@@ -50,7 +50,7 @@ Top-level fields:
 | `output` | yes | Exactly one output component. |
 | `limits` | yes | See [Limits](#limits). Missing or out of range is a validation error. |
 | `schedule` | no | Only meaningful when the input is `schedule`; see [scheduling](scheduling.md). Kept at top level so the host can read it without knowing components. |
-| `tests` | no | Embedded tests; see [agent-surface](agent-surface.md#pipeline-tests). |
+| `tests` | no | Embedded tests; see [agent-surface](agent-surface.md#pipeline-tests). Each may carry `mocks` ([test-mocks](test-mocks.md)), checked with the pipeline under `/tests/<i>/mocks/…` with the codes `unknown_step`, `invalid_mock`, `mock_unreachable`, `changes_message_ids`, `mock_shape_mismatch` and `mock_missing_field`. |
 
 Unknown top-level fields and unknown component fields are errors, not warnings. An agent that invents a field learns immediately.
 

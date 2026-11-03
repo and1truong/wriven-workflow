@@ -11,6 +11,7 @@ import { DEFAULT_DISPLAY_NAME, renderPermissions, type RenderContext } from "./r
 import { TOP_LEVEL_SCHEMA } from "./schema.ts";
 import { describeShape, shapeAt, UNKNOWN, type Shape } from "./shape.ts";
 import { allSteps, childLists, STRUCTURE_LIMITS } from "./tree.ts";
+import { checkMocks, type ShapeWalk } from "./mocks.ts";
 
 export interface ValidationContext extends RenderContext {
   clock: "host" | "engine";
@@ -69,29 +70,17 @@ export function validatePipeline(document: unknown, ctx: ValidationContext): Val
   checkEnvironment(pipeline, ctx, errors);
   checkLimits(pipeline.limits, ctx.ceilings, errors);
 
-  // Walk the pipeline in order, carrying the shape of the data; containers walk their own lists.
-  const walkList = (steps: any[], basePath: string, start: Shape, before?: Shape[]): Shape => {
-    let shape = start;
-    steps.forEach((config, i) => {
-      before?.push(shape);
-      shape = walkStep(config, `${basePath}/${i}`, shape);
-    });
-    return shape;
-  };
-  const walkStep = (config: any, path: string, shape: Shape): Shape => {
-    const def = COMPONENT_BY_TYPE.get(config.type)!;
-    const stepCtx = checkContext(path, pipeline, ctx, errors, warnings, walkList);
-    if (def.walk) return def.walk(config, shape, stepCtx);
-    def.check?.(config, shape, stepCtx);
-    return def.outputShape?.(config, shape) ?? shape;
-  };
-  let shape = walkStep(pipeline.input, "/input", UNKNOWN);
-  shape = walkList(pipeline.processors, "/processors", shape);
-  walkStep(pipeline.output, "/output", shape);
+  const shapeWalk = walker(pipeline, ctx);
+  const walked = shapeWalk(new Map());
+  errors.push(...walked.errors);
+  warnings.push(...walked.warnings);
   if (errors.length > 0) return failed();
 
   checkTopLevelSchedule(pipeline, errors);
   checkSleeps(pipeline, errors);
+  (pipeline.tests ?? []).forEach((test: any, i: number) => {
+    if (test.mocks !== undefined) errors.push(...checkMocks(pipeline, test.mocks, `/tests/${i}/mocks`, shapeWalk));
+  });
   if (errors.length > 0) return failed();
 
   const types: string[] = pipeline.processors.map((p: any) => p.type);
@@ -108,6 +97,41 @@ export function validatePipeline(document: unknown, ctx: ValidationContext): Val
     permissions,
     permissions_hash: permissionsHash(permissions),
     rendered: renderPermissions(permissions, ctx),
+  };
+}
+
+// Walks the pipeline in order, carrying the shape of the data; containers walk their own lists. A
+// step in `overrides` is not checked and emits the shape given (a test mock). Returns what each
+// processor step emitted, by id, with the issues found.
+export function walker(pipeline: any, ctx: ValidationContext): ShapeWalk {
+  return (overrides) => {
+    const errors: PipelineIssue[] = [];
+    const warnings: PipelineIssue[] = [];
+    const outputs = new Map<string, Shape>();
+    const walkList = (steps: any[], basePath: string, start: Shape, before?: Shape[]): Shape => {
+      let shape = start;
+      steps.forEach((config, i) => {
+        before?.push(shape);
+        shape = walkStep(config, `${basePath}/${i}`, shape);
+      });
+      return shape;
+    };
+    const walkStep = (config: any, path: string, shape: Shape): Shape => {
+      const out = stepShape(config, path, shape);
+      if (config.id !== undefined) outputs.set(config.id, out);
+      return out;
+    };
+    const stepShape = (config: any, path: string, shape: Shape): Shape => {
+      if (config.id !== undefined && overrides.has(config.id)) return overrides.get(config.id)!;
+      const def = COMPONENT_BY_TYPE.get(config.type)!;
+      const stepCtx = checkContext(path, pipeline, ctx, errors, warnings, walkList);
+      if (def.walk) return def.walk(config, shape, stepCtx);
+      def.check?.(config, shape, stepCtx);
+      return def.outputShape?.(config, shape) ?? shape;
+    };
+    const shape = walkList(pipeline.processors, "/processors", walkStep(pipeline.input, "/input", UNKNOWN));
+    walkStep(pipeline.output, "/output", shape);
+    return { outputs, errors, warnings };
   };
 }
 
