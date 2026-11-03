@@ -53,7 +53,7 @@ const template: Processor = async (config, batch) => {
       const [placeholder] = findPlaceholders(raw).placeholders;
       if (!placeholder) return raw;
       if (placeholder.meta !== undefined) {
-        const meta = message.meta[placeholder.meta];
+        const meta = Object.hasOwn(message.meta, placeholder.meta) ? message.meta[placeholder.meta] : undefined;
         if (meta === undefined && config.missing !== "empty") {
           throw new StepError("unresolved_pointer", `The metadata key ${placeholder.meta} does not exist in message ${message.id}.`, { message_id: message.id });
         }

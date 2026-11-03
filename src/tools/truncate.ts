@@ -37,7 +37,7 @@ export function truncateResult<T>(input: T, limit: number): T {
     if (text.length <= PREVIEW_CHARS) break;
     const replacement = { preview: text.slice(0, PREVIEW_CHARS), original_size: Buffer.byteLength(text), truncated: true };
     parent[key] = replacement;
-    total = size(root.value);
+    total -= size(text) - size(replacement);
   }
 
   // Longest serialized array first; each loses its tail, a share at a time, until the whole fits.

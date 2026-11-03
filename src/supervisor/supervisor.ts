@@ -18,6 +18,14 @@ import type { RunInit, RunOutcome } from "../executor/messages.ts";
 import type { ReportError, ReportStep, ReportWarning, RunReport, RunTrigger } from "../report.ts";
 
 export const CANCEL_GRACE_MS = 5000;
+// What a run can make the engine hold, or put in a report. The run process is not trusted to be modest.
+const MAX_WARNINGS = 200;
+const MAX_TEXT_CHARS = 1000;
+const MAX_HOSTS = 200;
+// RLIMIT_CPU, generous enough that a healthy run on many threads never meets it: the wall-clock timeout
+// is the real limit, this is for a process that nobody is left to kill.
+const CPU_LIMIT_FACTOR = 4;
+const CPU_LIMIT_MIN_S = 60;
 const EXIT_WAIT_MS = 2000;
 const ATTEMPTS = 2;
 
@@ -103,6 +111,10 @@ export class RunProcess {
   private networkBytes = 0;
   private readonly networkHosts = new Set<string>();
   private readonly networkDenied = new Set<string>();
+  private spawnFailure: string | null = null;
+  private warningsOmitted = 0;
+  // The run answered or died; what remains is waiting for the process to be gone.
+  private finishing = false;
 
   constructor(
     readonly job: RunJob,
@@ -111,10 +123,16 @@ export class RunProcess {
 
   async run(): Promise<RunReport> {
     this.startedAt = this.env.now().toISOString();
-    this.spawn();
+    try {
+      this.spawn();
+    } catch (err) {
+      this.spawnFailure = (err as Error).message;
+      this.cleanUp();
+      return this.report(null, null);
+    }
     this.env.onStarted(this.job, this.startedAt);
     void this.watchMemory();
-    const timeout = this.env.test?.runTimeoutMs ?? Math.min(parseDuration(this.job.pipeline.limits.run_timeout), parseDuration(this.env.ceilings.run_timeout));
+    const timeout = this.env.test?.runTimeoutMs ?? this.timeoutMs();
     this.timeoutTimer = setTimeout(() => {
       this.killWith({ status: "timed_out", error: this.errorOf("timed_out", `The run passed its limit of ${this.job.pipeline.limits.run_timeout}.`) });
     }, timeout);
@@ -125,17 +143,26 @@ export class RunProcess {
     } catch (err) {
       failure = toRpcError(err);
     }
+    this.finishing = true;
     clearTimeout(this.timeoutTimer);
     if (this.killTimer) clearTimeout(this.killTimer);
     await this.waitForExit();
-    this.proxy?.stop();
-    rmSync(this.tempDir, { recursive: true, force: true });
+    this.cleanUp();
     return this.report(outcome, failure);
+  }
+
+  private timeoutMs(): number {
+    return Math.min(parseDuration(this.job.pipeline.limits.run_timeout), parseDuration(this.env.ceilings.run_timeout));
+  }
+
+  private cleanUp(): void {
+    this.proxy?.stop();
+    if (this.tempDir) rmSync(this.tempDir, { recursive: true, force: true });
   }
 
   // A cooperative cancel; the process has CANCEL_GRACE_MS to finish its report.
   cancel(reason: string): void {
-    if (this.cancelReason !== null || this.terminal) return;
+    if (this.cancelReason !== null || this.terminal || this.finishing) return;
     this.cancelReason = reason;
     this.cancelOutstanding();
     this.peer.notify("cancel", { reason });
@@ -145,7 +172,7 @@ export class RunProcess {
   }
 
   killWith(terminal: Terminal): void {
-    if (this.terminal) return;
+    if (this.terminal || this.finishing) return;
     this.terminal = terminal;
     this.cancelOutstanding();
     this.killGroup();
@@ -155,7 +182,7 @@ export class RunProcess {
     const { run_id, stream_id, pipeline, trigger, scheduled_for, clock, input_override } = this.job;
     const proxy = this.proxy ? { port: this.proxy.port, token: this.proxyToken } : null;
     const state_path = stream_id ? join(this.env.streamDir(stream_id), "state.json") : null;
-    return { run_id, stream_id, pipeline, trigger, scheduled_for, clock, input_override, proxy, state_path, initial_state: this.job.initial_state ?? null, fixtures: this.job.fixtures ?? null, ...(this.env.test?.hook ? { test_hook: this.env.test.hook } : {}) };
+    return { run_id, stream_id, pipeline, trigger, scheduled_for, clock, input_override, proxy, cpu_limit_s: Math.max(CPU_LIMIT_MIN_S, Math.ceil((this.timeoutMs() / 1000) * CPU_LIMIT_FACTOR)), state_path, initial_state: this.job.initial_state ?? null, fixtures: this.job.fixtures ?? null, ...(this.env.test?.hook ? { test_hook: this.env.test.hook } : {}) };
   }
 
   private spawn(): void {
@@ -177,6 +204,7 @@ export class RunProcess {
     }) as Bun.PipedSubprocess;
     this.peer = new Peer({
       idPrefix: "s-",
+      // Outgoing, carrying the run's whole input. What comes back keeps to the public limit.
       maxLineBytes: MAX_PRIVATE_LINE_BYTES,
       write: (line) => {
         void this.process.stdin.write(line);
@@ -220,7 +248,7 @@ export class RunProcess {
   }
 
   private async pump(): Promise<void> {
-    const out = new LineSplitter({ onLine: (line) => this.peer.receive(line), onOversize: () => this.killGroup() }, MAX_PRIVATE_LINE_BYTES);
+    const out = new LineSplitter({ onLine: (line) => this.peer.receive(line), onOversize: () => this.killGroup() });
     const err = new LineSplitter(
       {
         onLine: (line) => {
@@ -242,14 +270,20 @@ export class RunProcess {
   }
 
   private onChildNotification(method: string, params: any): void {
-    if (method === "step.started") this.currentStep = String(params.step_id);
-    else if (method === "step.finished") this.steps.push(params as ReportStep);
-    else if (method === "warning") this.warnings.push(params as ReportWarning);
-    else if (method === "network") {
+    if (method === "step.started") {
+      this.currentStep = bounded(params.step_id);
+    } else if (method === "step.finished") {
+      if (this.steps.length < this.job.pipeline.processors.length + 2) this.steps.push({ ...params, step_id: bounded(params.step_id) } as ReportStep);
+    } else if (method === "warning") {
+      if (this.warnings.length >= MAX_WARNINGS) this.warningsOmitted++;
+      else this.warnings.push({ step_id: bounded(params.step_id), message_id: params.message_id === null ? null : bounded(params.message_id), code: bounded(params.code), message: bounded(params.message) });
+    } else if (method === "network") {
       this.networkRequests++;
-      this.networkBytes += params.bytes as number;
-      this.networkHosts.add(String(params.host));
-    } else if (method === "denied") this.networkDenied.add(String(params.host));
+      this.networkBytes += Number(params.bytes) || 0;
+      if (this.networkHosts.size < MAX_HOSTS) this.networkHosts.add(bounded(params.host));
+    } else if (method === "denied") {
+      if (this.networkDenied.size < MAX_HOSTS) this.networkDenied.add(bounded(params.host));
+    }
   }
 
   private onChildRequest(method: string, params: any): Promise<unknown> {
@@ -259,7 +293,15 @@ export class RunProcess {
   }
 
   private async forwardLlm(params: any): Promise<unknown> {
-    const limit = Math.min(this.job.pipeline.limits.llm_calls_per_run as number, this.env.ceilings.llm_calls_per_run);
+    // What may be asked comes from the pinned permissions and the pipeline. From the run process only
+    // the text of the prompt is taken, because a compromised one must not get more than a healthy one.
+    const permitted = this.job.permissions.llm;
+    const step = this.job.pipeline.processors.find((p: any) => p.id === params.step_id && p.type === "host_llm");
+    const prompt = params.messages?.[0]?.content;
+    if (!permitted || !step || typeof prompt !== "string" || typeof params.message_id !== "string") {
+      throw new RpcError("permission_denied", "This stream's permissions do not include that model call.");
+    }
+    const limit = Math.min(permitted.max_calls_per_run, this.env.ceilings.llm_calls_per_run);
     if (this.llmCalls >= limit) {
       throw new RpcError("budget_exceeded", `The pipeline allows at most ${limit} model calls per run.`, { limit: "llm_calls_per_run", value: limit });
     }
@@ -273,9 +315,9 @@ export class RunProcess {
       message_id: params.message_id,
       attempt,
       idempotency_key: key,
-      ...(params.system !== undefined ? { system: params.system } : {}),
-      messages: params.messages,
-      ...(params.max_output_tokens !== undefined ? { max_output_tokens: params.max_output_tokens } : {}),
+      ...(step.system !== undefined ? { system: step.system } : {}),
+      messages: [{ role: "user", content: prompt }],
+      ...(step.max_output_tokens !== undefined ? { max_output_tokens: step.max_output_tokens } : {}),
     });
     const { reply, attempt } = await this.askHost("host.llm", request, this.env.hostHandlers?.llm);
     if (typeof reply?.text !== "string" || typeof reply?.usage?.input_tokens !== "number" || typeof reply?.usage?.output_tokens !== "number") {
@@ -293,12 +335,18 @@ export class RunProcess {
   }
 
   private async forwardResult(params: any): Promise<unknown> {
+    const output = this.job.pipeline.output;
+    const body = params.result?.body;
+    if (this.job.permissions.results.kind !== "host" || output.type !== "host_result" || typeof body !== "string" || typeof params.message_id !== "string") {
+      throw new RpcError("permission_denied", "This stream's permissions do not include writing that result.");
+    }
     const key = `${this.job.run_id}/${params.message_id}`;
-    const request = () => ({ run_id: this.job.run_id, stream_id: this.job.stream_id, message_id: params.message_id, idempotency_key: key, result: params.result });
+    const result = { title: output.title as string, body, format: (output.format ?? "markdown") as string };
+    const request = () => ({ run_id: this.job.run_id, stream_id: this.job.stream_id, message_id: params.message_id, idempotency_key: key, result });
     const { reply } = await this.askHost("host.result", request, this.env.hostHandlers?.result);
     if (reply?.accepted !== true) throw new RpcError("host_error", "The host did not accept the result.", { reason: "not_accepted" });
     if (!this.results.some((r) => r.idempotency_key === key)) {
-      this.results.push({ idempotency_key: key, ref: typeof reply.ref === "string" ? reply.ref : null, title: params.result.title });
+      this.results.push({ idempotency_key: key, ref: typeof reply.ref === "string" ? reply.ref : null, title: result.title });
     }
     return reply;
   }
@@ -334,6 +382,8 @@ export class RunProcess {
   }
 
   private killGroup(): void {
+    // Once it has exited the pid may belong to someone else.
+    if (this.exited || !this.process) return;
     try {
       process.kill(-this.process.pid, "SIGKILL");
     } catch {
@@ -360,11 +410,13 @@ export class RunProcess {
       ({ status, error } = this.terminal);
     } else if (outcome) {
       status = outcome.status;
-      error = outcome.error ? { retry_after: null, ...outcome.error } : null;
+      error = outcome.error ? { retry_after: null, ...outcome.error, message: bounded(outcome.error.message) } : null;
     } else {
       status = "failed";
       const exited = failure?.extras.reason === "process_exited";
-      error = this.sandboxFailure
+      error = this.spawnFailure
+        ? this.errorOf("spawn_failed", `The run process could not start: ${this.spawnFailure}`)
+        : this.sandboxFailure
         ? this.errorOf("sandbox_unavailable", `The sandbox could not be set up: ${this.sandboxFailure}`)
         : this.errorOf(exited ? "process_exited" : (failure?.kind ?? "internal"), failure?.message ?? "The run process stopped without a report.");
     }
@@ -386,7 +438,10 @@ export class RunProcess {
       finished_at: this.env.now().toISOString(),
       status,
       error,
-      warnings: this.warnings,
+      warnings:
+        this.warningsOmitted > 0
+          ? [...this.warnings, { step_id: "report", message_id: null, code: "warnings_omitted", message: `${this.warningsOmitted} more warnings were left out.` }]
+          : this.warnings,
       steps: this.steps,
       llm: { calls: this.llmCalls, input_tokens: this.inputTokens, output_tokens: this.outputTokens, cost_usd: this.cost, requests: this.llmRequests },
       network: {
@@ -406,7 +461,11 @@ export class RunProcess {
   }
 }
 
-export function skippedOrCancelledReport(job: RunJob, now: Date, status: "cancelled" | "skipped", error: ReportError, extras: Partial<RunReport> & Record<string, unknown> = {}): RunReport {
+function bounded(value: unknown): string {
+  return String(value).slice(0, MAX_TEXT_CHARS);
+}
+
+export function unstartedReport(job: RunJob, now: Date, status: "cancelled" | "skipped" | "failed", error: ReportError, extras: Partial<RunReport> & Record<string, unknown> = {}): RunReport {
   return {
     report_version: REPORT_VERSION as 1,
     run_id: job.run_id,

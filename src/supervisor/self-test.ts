@@ -1,5 +1,6 @@
 // `doctor --self-test`: runs a child under a real profile and tries everything the profile forbids.
 
+import { dlopen, FFIType, ptr } from "bun:ffi";
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,6 +26,8 @@ interface ChildArgs {
   tempDir: string;
   allowedPort: number;
   stamp: string;
+  parentPid: number;
+  bystanderPid: number;
 }
 
 function classify(err: unknown): { outcome: Outcome; detail: string } {
@@ -67,15 +70,35 @@ function connect(hostname: string, port: number): Promise<void> {
   });
 }
 
+// Another process's argv and environment, through sysctl(KERN_PROCARGS2).
+function readProcessArguments(pid: number): void {
+  const libc = dlopen("libSystem.B.dylib", {
+    sysctl: { args: [FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.u64], returns: FFIType.i32 },
+  });
+  const CTL_KERN = 1;
+  const KERN_PROCARGS2 = 49;
+  const mib = new Int32Array([CTL_KERN, KERN_PROCARGS2, pid]);
+  const buffer = new Uint8Array(1 << 18);
+  const length = new BigUint64Array([BigInt(buffer.length)]);
+  if (libc.symbols.sysctl(ptr(mib), 3, ptr(buffer), ptr(length), null, 0n) !== 0) throw Object.assign(new Error("sysctl refused"), { code: "EPERM" });
+}
+
 // Runs inside the sandbox. Writes one JSON line of outcomes.
 export async function selfTestChild(argument: string): Promise<number> {
   const args = JSON.parse(argument) as ChildArgs;
-  const { readFileSync, writeFileSync: write } = await import("node:fs");
+  const { linkSync, readFileSync, symlinkSync, writeFileSync: write } = await import("node:fs");
   const outcomes: Record<string, { outcome: Outcome; detail: string }> = {
     read_ssh_key: await attempt(() => readFileSync(join(args.home, ".ssh", "id_rsa"))),
     read_outside: await attempt(() => readFileSync(args.sentinel)),
     read_manifest: await attempt(() => readFileSync(args.manifest)),
     write_manifest: await attempt(() => write(args.manifest, "{}")),
+    link_outside: await attempt(() => linkSync(args.sentinel, join(args.tempDir, "linked"))),
+    read_through_symlink: await attempt(() => {
+      symlinkSync(args.sentinel, join(args.tempDir, "symlink"));
+      readFileSync(join(args.tempDir, "symlink"));
+    }),
+    read_process_arguments: await attempt(() => readProcessArguments(args.parentPid)),
+    signal_other_process: await attempt(() => process.kill(args.bystanderPid, "SIGCONT")),
     write_desktop: await attempt(() => write(join(args.home, "Desktop", `x-${args.stamp}`), "x")),
     write_tmp: await attempt(() => write(join(args.tmp, `x-${args.stamp}`), "x")),
     exec_sh: await attempt(async () => {
@@ -99,6 +122,10 @@ const EXPECTATIONS: Array<[string, string, "denied" | "allowed"]> = [
   ["read_outside", "read a file outside the allowed paths", "denied"],
   ["read_manifest", "read the stream's manifest", "denied"],
   ["write_manifest", "write the stream's manifest", "denied"],
+  ["link_outside", "hard-link an outside file into the temp directory", "denied"],
+  ["read_through_symlink", "read an outside file through a symlink", "denied"],
+  ["read_process_arguments", "read another process's arguments and environment", "denied"],
+  ["signal_other_process", "signal another process", "denied"],
   ["write_desktop", "write ~/Desktop/x", "denied"],
   ["write_tmp", "write /tmp/x", "denied"],
   ["exec_sh", "exec /bin/sh", "denied"],
@@ -132,12 +159,13 @@ export async function runSelfTest(command = selfCommand()): Promise<SelfTestRepo
   writeFileSync(sentinel, "secret");
   writeFileSync(manifest, "{}");
   const listener = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {}, open(socket) { socket.end(); } } });
+  const bystander = Bun.spawn(["/bin/sleep", "60"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
   const home = homedir();
   const desktopProbe = join(home, "Desktop", `x-${stamp}`);
   const tmpProbe = join(realpathSync("/tmp"), `x-${stamp}`);
   try {
     const profile = generateProfile({ programPaths: programPaths(command), tempDir, stateFiles: [stateFile], proxyPort: listener.port });
-    const args: ChildArgs = { home, tmp: realpathSync("/tmp"), sentinel, stateFile, manifest, tempDir, allowedPort: listener.port, stamp };
+    const args: ChildArgs = { home, tmp: realpathSync("/tmp"), sentinel, stateFile, manifest, tempDir, allowedPort: listener.port, stamp, parentPid: process.pid, bystanderPid: bystander.pid };
     const child = Bun.spawn([status.path!, "-p", profile, realpathSync(command[0]!), ...command.slice(1), "--self-test-child", JSON.stringify(args)], {
       stdout: "pipe",
       stderr: "pipe",
@@ -158,6 +186,7 @@ export async function runSelfTest(command = selfCommand()): Promise<SelfTestRepo
     return { ok: checks.every((c) => c.ok), reason: null, checks, proxy_can_bind: true };
   } finally {
     listener.stop(true);
+    bystander.kill("SIGKILL");
     rmSync(root, { recursive: true, force: true });
     // If the sandbox failed to stop these, do not leave them behind.
     for (const probe of [desktopProbe, tmpProbe]) {

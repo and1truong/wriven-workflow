@@ -19,13 +19,15 @@ export interface RunInit {
   clock: string | null;
   input_override: Message[] | null;
   proxy: { port: number; token: string } | null;
+  // RLIMIT_CPU for the process.
+  cpu_limit_s: number;
   // Where the stream's state lives; null when nothing may be written (tests).
   state_path: string | null;
   initial_state: StateFile | null;
   // A test's fake pages. When set, the run has no network at all.
   fixtures: Record<string, { status?: number; content_type?: string; body?: string; headers?: Record<string, string> }> | null;
   // Set only by tests in this repository, through the supervisor; no RPC reaches it.
-  test_hook?: { allocate_mb?: number; delay_ms?: number; bypass_allowlist_check?: boolean; tls_ca?: string };
+  test_hook?: { allocate_mb?: number; delay_ms?: number; spin?: boolean; cpu_limit_s?: number; forge_requests?: Array<{ method: string; params: unknown }>; bypass_allowlist_check?: boolean; tls_ca?: string };
 }
 
 export interface RunOutcome {

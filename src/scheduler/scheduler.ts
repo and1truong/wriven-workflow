@@ -43,12 +43,17 @@ export class Scheduler {
     const now = this.deps.now().getTime();
     for (const manifest of this.deps.streams.all()) {
       if (manifest.status !== "active" || !isScheduled(manifest)) continue;
-      const last = this.lastHandled(manifest);
-      if (last === null) {
-        this.setLastHandled(manifest.stream_id, now);
-        continue;
+      // One stream's failure must not stop the others'.
+      try {
+        const last = this.lastHandled(manifest);
+        if (last === null) {
+          this.setLastHandled(manifest.stream_id, now);
+          continue;
+        }
+        this.handleStream(manifest, last, now);
+      } catch (err) {
+        logLine("error", "the scheduler failed on a stream", { stream_id: manifest.stream_id, error: String(err) });
       }
-      this.handleStream(manifest, last, now);
     }
   }
 
@@ -104,8 +109,14 @@ export class Scheduler {
   }
 
   private lastHandled(manifest: Manifest): number | null {
-    const bookmark = readJson<{ last_handled: string }>(this.bookmarkPath(manifest.stream_id));
-    return bookmark ? Date.parse(bookmark.last_handled) : null;
+    try {
+      const bookmark = readJson<{ last_handled: string }>(this.bookmarkPath(manifest.stream_id));
+      const instant = bookmark ? Date.parse(bookmark.last_handled) : NaN;
+      return Number.isNaN(instant) ? null : instant;
+    } catch {
+      // Unreadable counts as no bookmark: nothing is made up, the next occurrence fires.
+      return null;
+    }
   }
 
   private setLastHandled(streamId: string, instant: number): void {

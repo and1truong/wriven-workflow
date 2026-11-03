@@ -133,7 +133,11 @@ async function fetchOne(url: string, config: any, ctx: StepContext): Promise<{ f
     ctx.network(host, response.body.length);
     if (REDIRECTS.has(response.status) && response.headers.location) {
       if (hop >= MAX_REDIRECTS) throw new StepError("http_status", `${url} redirected more than ${MAX_REDIRECTS} times.`, { status: response.status });
-      current = new URL(response.headers.location, current).toString();
+      try {
+        current = new URL(response.headers.location, current).toString();
+      } catch {
+        throw new StepError("http_status", `${current} redirected to an invalid URL.`, { status: response.status });
+      }
       continue;
     }
     if (response.status < 200 || response.status >= 300) {

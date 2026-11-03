@@ -1,12 +1,23 @@
 // Atomic JSON files under the state directory. Everything the engine writes is 0600.
 
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
+
+// Synced before the rename, so a power loss cannot leave an empty file under the real name.
+export function writeDurably(path: string, text: string): void {
+  const fd = openSync(path, "w", 0o600);
+  try {
+    writeSync(fd, text);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+}
 
 export function writeJsonAtomic(path: string, value: unknown): void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const tmp = `${path}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(value)}\n`, { mode: 0o600 });
+  writeDurably(tmp, `${JSON.stringify(value)}\n`);
   renameSync(tmp, path);
 }
 

@@ -4,9 +4,18 @@
 import { RpcError } from "../protocol/errors.ts";
 import { MAX_PRIVATE_LINE_BYTES, readLines, StdoutWriter } from "../protocol/lines.ts";
 import { Peer } from "../protocol/peer.ts";
+import { dlopen, FFIType, ptr } from "bun:ffi";
 import { fixtureFetcher, proxyFetcher } from "../components/http-fetch.ts";
 import { execute } from "./executor.ts";
 import type { RunInit } from "./messages.ts";
+
+// The kernel's backstop. Reading stdin is how this process notices its parent is gone, and a stuck
+// synchronous loop never gets to read it, so CPU time must end it even with nobody left to kill it.
+function limitCpu(seconds: number): void {
+  const libc = dlopen("libSystem.B.dylib", { setrlimit: { args: [FFIType.i32, FFIType.ptr], returns: FFIType.i32 } });
+  const RLIMIT_CPU = 0;
+  libc.symbols.setrlimit(RLIMIT_CPU, ptr(new BigUint64Array([BigInt(seconds), BigInt(seconds + 1)])));
+}
 
 export async function runMain(): Promise<void> {
   const out = new StdoutWriter();
@@ -14,16 +23,24 @@ export async function runMain(): Promise<void> {
   const peer: Peer = new Peer({
     write: (line) => out.write(line),
     idPrefix: "r-",
-    maxLineBytes: MAX_PRIVATE_LINE_BYTES,
     onNotification(method) {
       if (method === "cancel") cancel.abort();
     },
     async onRequest(method, params) {
       if (method !== "run") throw new RpcError("method_not_found", `There is no method named ${method}.`);
       const hook = (params as RunInit).test_hook;
+      limitCpu(hook?.cpu_limit_s ?? (params as RunInit).cpu_limit_s);
       const held = hook?.allocate_mb ? Array.from({ length: hook.allocate_mb }, () => Buffer.alloc(1024 * 1024, 1)) : [];
       void held;
       if (hook?.delay_ms) await Bun.sleep(hook.delay_ms);
+      if (hook?.spin) for (;;);
+      for (const forged of hook?.forge_requests ?? []) {
+        const answer = await peer.request(forged.method, forged.params).promise.then(
+          () => "answered",
+          (err: RpcError) => err.kind,
+        );
+        peer.notify("warning", { step_id: "forged", message_id: null, code: answer, message: forged.method });
+      }
       const init = params as RunInit;
       const outcome = await execute(init, {
         fetcher: init.fixtures ? fixtureFetcher(init.fixtures) : init.proxy ? proxyFetcher(init.proxy, init.test_hook?.tls_ca) : null,

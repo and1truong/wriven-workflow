@@ -59,6 +59,10 @@ Controls: no component takes a filesystem path; the Seatbelt profile allows read
 
 Residual: the engine process is not sandboxed (it must spawn and proxy). A compromised dependency executing in the engine could read files as the user. Mitigations: zero-dependency goal ([packaging-and-release](packaging-and-release.md)), lockfile and notices, and the host's choice to bundle a pinned, checksummed engine. Full mitigation would be sandboxing the engine too, which needs an App Sandbox and a `.app`; recorded as future work.
 
+The engine does not take the run process's word for what it may do. A `host.llm` is forwarded only for a `host_llm` step in the pinned pipeline, within the pinned call count, with `system` and `max_output_tokens` from the pipeline; a `host.result` only when permissions say results go to the host, with its title and format from the pipeline. RLIMIT_CPU ends a stuck run even when no engine is left to kill it, and warnings, hosts and steps a run reports are capped so it cannot grow the engine's memory.
+
+Residual: a compromised run decides the text of its prompts and results up to those limits, can send many results (one per message is legitimate, so the count is not capped), and can misreport its own `status`, `warnings`, `steps` and `state.dedupe_keys`, because only it knows them. What it spent on the model and which hosts it reached are counted by the engine.
+
 ### T5 Agent escalates by editing an approved stream
 
 Actor A1. Attempt: approve a harmless pipeline, then `workflow_update_stream` to add hosts or calls.

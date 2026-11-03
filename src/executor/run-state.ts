@@ -1,7 +1,8 @@
 // A stream's operational state inside a run: an in-memory copy of its dedupe keys, written to disk only
 // when the run succeeds. A failed run commits nothing, so the next run sees the same items again.
 
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync } from "node:fs";
+import { writeDurably } from "../state/files.ts";
 import { StepError } from "./messages.ts";
 
 export interface StateFile {
@@ -11,42 +12,51 @@ export interface StateFile {
 }
 
 export class RunState {
-  private readonly data: StateFile;
+  // Maps: keys come from feeds, and a guid named __proto__ is just a key.
+  private readonly seen = new Map<string, Map<string, string>>();
 
   constructor(
     private readonly path: string | null,
     initial: StateFile | null,
   ) {
-    this.data = initial ?? (path && existsSync(path) ? readState(path) : { version: 1, seen: {} });
+    const file = initial ?? (path && existsSync(path) ? readState(path) : { version: 1 as const, seen: {} });
+    for (const [stepId, keys] of Object.entries(file.seen)) this.seen.set(stepId, new Map(Object.entries(keys)));
   }
 
   // True when the key is new or has expired, and remembers it. Nothing reaches disk before commit.
   admit(stepId: string, key: string, now: Date, rememberMs: number): boolean {
-    const seen = (this.data.seen[stepId] ??= {});
-    const when = seen[key];
+    let seen = this.seen.get(stepId);
+    if (!seen) {
+      seen = new Map();
+      this.seen.set(stepId, seen);
+    }
+    const when = seen.get(key);
     if (when !== undefined && Date.parse(when) + rememberMs > now.getTime()) return false;
-    seen[key] = now.toISOString();
+    seen.set(key, now.toISOString());
     return true;
   }
 
   // Drops the oldest keys past the limit and everything expired.
   trim(stepId: string, now: Date, rememberMs: number, maxKeys: number): void {
-    const seen = this.data.seen[stepId];
+    const seen = this.seen.get(stepId);
     if (!seen) return;
-    const live = Object.entries(seen).filter(([, when]) => Date.parse(when) + rememberMs > now.getTime());
+    const live = [...seen].filter(([, when]) => Date.parse(when) + rememberMs > now.getTime());
     live.sort(([, a], [, b]) => (a < b ? -1 : a > b ? 1 : 0));
-    this.data.seen[stepId] = Object.fromEntries(live.slice(Math.max(0, live.length - maxKeys)));
+    this.seen.set(stepId, new Map(live.slice(Math.max(0, live.length - maxKeys))));
   }
 
   get keyCount(): number {
-    return Object.values(this.data.seen).reduce((sum, seen) => sum + Object.keys(seen).length, 0);
+    let count = 0;
+    for (const seen of this.seen.values()) count += seen.size;
+    return count;
   }
 
   // Returns whether anything was written.
   commit(touched: boolean): boolean {
     if (!this.path || !touched) return false;
     const tmp = `${this.path}.tmp`;
-    writeFileSync(tmp, `${JSON.stringify(this.data)}\n`, { mode: 0o600 });
+    const seen = Object.fromEntries([...this.seen].map(([stepId, keys]) => [stepId, Object.fromEntries(keys)]));
+    writeDurably(tmp, `${JSON.stringify({ version: 1, seen } satisfies StateFile)}\n`);
     renameSync(tmp, this.path);
     return true;
   }

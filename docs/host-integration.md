@@ -36,7 +36,7 @@ Spawn `wriven-workflow serve` with stdin and stdout as pipes. No arguments carry
 
 - **The engine lives as long as the app.** Stop it by closing stdin, or `shutdown` to wait for the drain. With stdin closed the engine reports what it can and exits 0 within 10 seconds plus 1; killing it instead leaves the run process to notice on its own, which it does, but no final report reaches you.
 - **Reading must never block on a request.** The engine sends you requests (`host.llm`, `host.result`) while you may be waiting on its answer to yours. Read lines continuously on their own task and correlate by `id`; responses arrive out of order. Handle `host.llm` asynchronously: it takes as long as the provider does.
-- **Lines can be 4 MiB.** Your reader needs a buffer at least that large. A line of yours over the limit gets `-32600`, id `null`.
+- **Lines can be 4 MiB.** Your reader needs a buffer at least that large. A line of yours over the limit gets `-32600`, id `null`. A prompt or result too large for one line fails the run with `invalid_request`, reason `message_too_large`, rather than reaching you.
 
 ## Handshake
 

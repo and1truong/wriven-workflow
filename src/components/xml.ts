@@ -9,7 +9,8 @@ export interface XmlNode {
 }
 
 const MAX_DEPTH = 64;
-const NAMED: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+const NAMED = new Map([["amp", "&"], ["lt", "<"], ["gt", ">"], ["quot", '"'], ["apos", "'"]]);
+const NAME_START = /[A-Za-z_:\u0080-\uffff]/;
 
 export function decodeXmlEntities(text: string): string {
   if (!text.includes("&")) return text;
@@ -18,16 +19,38 @@ export function decodeXmlEntities(text: string): string {
       const code = body[1] === "x" || body[1] === "X" ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10);
       return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : all;
     }
-    return NAMED[body] ?? all;
+    return NAMED.get(body) ?? all;
   });
 }
 
+// One pass with no backtracking: a tag can be megabytes of garbage. Only name="value" pairs count.
 function readAttributes(text: string): Record<string, string> {
-  const attrs: Record<string, string> = {};
-  for (const match of text.matchAll(/([^\s=\/]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
-    attrs[match[1]!] = decodeXmlEntities(match[2] ?? match[3] ?? "");
+  const attrs: Record<string, string> = Object.create(null);
+  let at = 0;
+  while (at < text.length) {
+    const equals = text.indexOf("=", at);
+    if (equals === -1) break;
+    let nameEnd = equals;
+    while (nameEnd > at && isSpace(text.charCodeAt(nameEnd - 1))) nameEnd--;
+    let nameStart = nameEnd;
+    while (nameStart > at && !isSpace(text.charCodeAt(nameStart - 1)) && text[nameStart - 1] !== "/") nameStart--;
+    let valueStart = equals + 1;
+    while (valueStart < text.length && isSpace(text.charCodeAt(valueStart))) valueStart++;
+    const quote = text[valueStart];
+    if (quote !== '"' && quote !== "'") {
+      at = valueStart;
+      continue;
+    }
+    const valueEnd = text.indexOf(quote, valueStart + 1);
+    if (valueEnd === -1) break;
+    if (nameEnd > nameStart) attrs[text.slice(nameStart, nameEnd)] = decodeXmlEntities(text.slice(valueStart + 1, valueEnd));
+    at = valueEnd + 1;
   }
   return attrs;
+}
+
+function isSpace(code: number): boolean {
+  return code === 32 || code === 9 || code === 10 || code === 13;
 }
 
 // Returns the root element, or null when the text holds no element at all.
@@ -68,18 +91,18 @@ export function parseXml(text: string): XmlNode | null {
       }
       at = end === -1 ? text.length : end + 1;
     } else {
+      // Before looking for the end of a tag: `< < < …` must not scan the rest of the text each time.
+      if (!NAME_START.test(text[open + 1] ?? "")) {
+        if (stack.length > 1) top().children.push("<");
+        at = open + 1;
+        continue;
+      }
       const end = findTagEnd(text, open);
       if (end === -1) break;
       const selfClosing = text[end - 1] === "/";
       const inner = text.slice(open + 1, selfClosing ? end - 1 : end);
       const nameEnd = inner.search(/\s/);
       const name = nameEnd === -1 ? inner : inner.slice(0, nameEnd);
-      if (name === "" || /^[0-9\s=]/.test(name)) {
-        // A bare < in text.
-        if (stack.length > 1) top().children.push("<");
-        at = open + 1;
-        continue;
-      }
       const node: XmlNode = { name, attrs: nameEnd === -1 ? {} : readAttributes(inner.slice(nameEnd)), children: [] };
       top().children.push(node);
       if (!selfClosing) {

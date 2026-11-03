@@ -60,7 +60,7 @@ export function checkSchema(schema: JsonSchema, value: unknown, path = "", root:
     }
     for (const [name, item] of Object.entries(object)) {
       const child = `${path}/${escapePointer(name)}`;
-      const sub = schema.properties?.[name];
+      const sub = schema.properties && Object.hasOwn(schema.properties, name) ? schema.properties[name] : undefined;
       if (sub) errors.push(...checkSchema(sub, item, child, root));
       else if (schema.additionalProperties === false) errors.push({ path: child, keyword: "additionalProperties", message: `${name} is not a field here.` });
       else if (schema.additionalProperties && typeof schema.additionalProperties === "object") errors.push(...checkSchema(schema.additionalProperties, item, child, root));

@@ -9,20 +9,56 @@ import { decodeXmlEntities, parseXml, type XmlNode } from "./xml.ts";
 
 const DEFAULT_MAX_ENTRIES = 100;
 
-const HTML_ENTITIES: Record<string, string> = {
+const HTML_ENTITIES = new Map(Object.entries({
   nbsp: " ", ndash: "–", mdash: "—", hellip: "…", lsquo: "‘", rsquo: "’", ldquo: "“", rdquo: "”", bull: "•", middot: "·",
   copy: "©", reg: "®", trade: "™", laquo: "«", raquo: "»", eacute: "é", egrave: "è", agrave: "à", ccedil: "ç", uuml: "ü", ouml: "ö", auml: "ä",
-};
+}));
+const BLOCK_END = /^(br|\/p|\/div|\/li|\/h[1-6]|\/tr|\/blockquote)\b/i;
+const RAW_ELEMENT = /^(script|style)\b/i;
+
+// One pass, no regex over the whole text: `<<<<`, `<!--<!--` and `<script><script>` in megabytes of
+// content must stay linear. What has no end is treated as a browser would, or kept as text.
+function stripMarkup(html: string): string {
+  const out: string[] = [];
+  let at = 0;
+  while (at < html.length) {
+    const open = html.indexOf("<", at);
+    if (open === -1) {
+      out.push(html.slice(at));
+      break;
+    }
+    out.push(html.slice(at, open));
+    if (html.startsWith("<!--", open)) {
+      const end = html.indexOf("-->", open + 4);
+      if (end === -1) break;
+      out.push(" ");
+      at = end + 3;
+      continue;
+    }
+    const end = html.indexOf(">", open + 1);
+    if (end === -1) {
+      out.push(html.slice(open));
+      break;
+    }
+    const start = html.slice(open + 1, Math.min(end, open + 16));
+    const raw = RAW_ELEMENT.exec(start);
+    if (raw) {
+      const closer = new RegExp(`</${raw[1]}\\s*>`, "gi");
+      closer.lastIndex = end + 1;
+      const match = closer.exec(html);
+      if (!match) break;
+      out.push(" ");
+      at = match.index + match[0].length;
+      continue;
+    }
+    if (BLOCK_END.test(start)) out.push("\n");
+    at = end + 1;
+  }
+  return out.join("");
+}
 
 export function htmlToText(html: string): string {
-  return decodeXmlEntities(
-    html
-      .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ")
-      .replace(/<!--[\s\S]*?-->/g, " ")
-      .replace(/<(br|\/p|\/div|\/li|\/h[1-6]|\/tr|\/blockquote)\b[^>]*>/gi, "\n")
-      .replace(/<[^>]*>/g, "")
-      .replace(/&([a-zA-Z]+);/g, (all, name: string) => HTML_ENTITIES[name] ?? all),
-  )
+  return decodeXmlEntities(stripMarkup(html).replace(/&([a-zA-Z]+);/g, (all, name: string) => HTML_ENTITIES.get(name) ?? all))
     .replace(/[ \t\r\f\v ]+/g, " ")
     .replace(/ ?\n ?/g, "\n")
     .replace(/\n{2,}/g, "\n")
@@ -143,7 +179,7 @@ export function parseFeedText(text: string, url: string): ParsedFeed {
     const items = elements(root).filter((c) => local(c.name) === "item");
     return { title: channel ? plain(find(channel, "title")) : "", entries: items.map((i) => rssEntry(i, url, "")) };
   }
-  throw new Error(root ? `The root element is ${root.name}, which is not a feed.` : "The body is not XML.");
+  throw new Error(root ? `The root element is ${root.name.slice(0, 80)}, which is not a feed.` : "The body is not XML.");
 }
 
 function entryId(entry: RawEntry): string {

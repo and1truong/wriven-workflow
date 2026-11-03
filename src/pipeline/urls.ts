@@ -35,8 +35,22 @@ export function isPrivateAddress(address: string): boolean {
   const mapped = address.toLowerCase().replace(/^::ffff:/, "");
   const v4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(mapped);
   if (v4) {
-    const [a, b] = [Number(v4[1]), Number(v4[2])];
-    return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224;
+    const [a, b, c] = [Number(v4[1]), Number(v4[2]), Number(v4[3])];
+    return (
+      a === 0 || a === 10 || a === 127 || a >= 224 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 192 && b === 0 && (c === 0 || c === 2)) ||
+      (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) ||
+      (a === 203 && b === 0 && c === 113)
+    );
   }
-  return mapped === "::" || mapped === "::1" || /^f[cd]/.test(mapped) || /^fe[89ab]/.test(mapped);
+  // IPv6 is public only in global unicast, minus the forms that embed an IPv4 address or are for
+  // documentation. An allowlist, because the embedded forms (::a.b.c.d, 64:ff9b::, …) keep multiplying.
+  if (!/^[23]/.test(mapped)) return true;
+  const firstGroup = mapped.split(":")[0]!.padStart(4, "0");
+  const secondGroup = (mapped.split(":")[1] ?? "").padStart(4, "0");
+  return firstGroup === "2002" || (firstGroup === "2001" && (secondGroup === "0000" || secondGroup === "0db8"));
 }

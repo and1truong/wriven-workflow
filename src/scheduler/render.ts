@@ -20,6 +20,8 @@ export function cronPhrase(text: string): string | null {
   const everyMinutes = /^\*\/(\d+)$/.exec(minute);
   if (everyMinutes && hour === "*" && day === "*" && weekday === "*") {
     const n = Number(everyMinutes[1]);
+    // */45 fires at :00 and :45, and */120 hourly. Only what divides the hour evenly means what it says.
+    if (n >= 60 || 60 % n !== 0) return null;
     return n === 1 ? "every minute" : `every ${n} minutes`;
   }
   if (minute === "*" && hour === "*" && day === "*" && weekday === "*") return "every minute";

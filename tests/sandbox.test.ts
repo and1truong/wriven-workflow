@@ -40,6 +40,10 @@ describe("doctor", () => {
     expect(names).toContain("write ~/Desktop/x");
     expect(names).toContain("read the stream's manifest");
     expect(names).toContain("write the stream's manifest");
+    expect(names).toContain("read another process's arguments and environment");
+    expect(names).toContain("hard-link an outside file into the temp directory");
+    expect(names).toContain("read an outside file through a symlink");
+    expect(names).toContain("signal another process");
     expect(names).toContain("exec /bin/sh");
     expect(names).toContain("bind a port");
     expect(names).toContain("connect to 1.1.1.1:443");

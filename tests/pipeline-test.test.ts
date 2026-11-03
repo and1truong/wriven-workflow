@@ -155,12 +155,10 @@ describe("pipeline.test", () => {
       output: { type: "drop" },
       limits: { llm_calls_per_run: 1, runs_per_day: 1, run_timeout: "1m" },
     };
-    // In a test the fake model takes any prompt; the run still has to answer.
+    // A test tells the truth about it: the prompt would not fit a real host either.
     const tested = await host.call("pipeline.test", { pipeline });
-    expect(tested.status).toBe("succeeded");
-    expect(tested.truncated).toBe(true);
-    expect(tested.llm_requests[0].prompt.truncated).toBe(true);
-    expect(Buffer.byteLength(JSON.stringify(tested.tool_result))).toBeLessThanOrEqual(32 * 1024);
+    expect(tested.status).toBe("failed");
+    expect(tested.report.error).toMatchObject({ kind: "invalid_request", reason: "message_too_large", step_id: "ask" });
 
     // Against a real host the prompt cannot fit a line: the run fails at once and says why.
     const { input: _input, ...stream } = pipeline;

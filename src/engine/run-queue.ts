@@ -3,7 +3,7 @@
 
 import { RpcError } from "../protocol/errors.ts";
 import type { ReportError, RunReport, RunTrigger } from "../report.ts";
-import { RunProcess, skippedOrCancelledReport, type RunJob, type SupervisorEnv } from "../supervisor/supervisor.ts";
+import { RunProcess, unstartedReport, type RunJob, type SupervisorEnv } from "../supervisor/supervisor.ts";
 import { join } from "node:path";
 import { logLine } from "../log.ts";
 import { readJson, writeJsonAtomic } from "../state/files.ts";
@@ -24,6 +24,10 @@ export interface TriggerOptions {
 
 export interface QueueEnv extends SupervisorEnv {
   emitFinished(report: RunReport): void;
+  // The stream as it is now, which may not be as it was when the trigger arrived.
+  currentManifest(streamId: string): Manifest | undefined;
+  // Why no run may start at all, if so.
+  sandboxRefusal(): string | null;
 }
 
 const DAY_MS = 86_400_000;
@@ -131,7 +135,7 @@ export class RunQueue {
         value: limit,
         resets_at: resetsAt,
       };
-      this.emit(skippedOrCancelledReport(job, this.env.now(), "skipped", error, { resets_at: resetsAt }));
+      this.emit(unstartedReport(job, this.env.now(), "skipped", error, { resets_at: resetsAt }));
       return false;
     }
     writeJsonAtomic(path, { started: [...recent, new Date(now).toISOString()] } satisfies RunLog);
@@ -140,7 +144,7 @@ export class RunQueue {
 
   private finishUnstarted(job: RunJob, reason: string): void {
     const error: ReportError = { kind: "cancelled", message: `The run was cancelled before it started (${reason}).`, step_id: null, message_id: null, retry_after: null, reason };
-    this.emit(skippedOrCancelledReport(job, this.env.now(), "cancelled", error));
+    this.emit(unstartedReport(job, this.env.now(), "cancelled", error));
   }
 
   private emit(report: RunReport): void {
@@ -149,16 +153,50 @@ export class RunQueue {
     this.env.emitFinished(report);
   }
 
+  // Everything that decides whether a queued run may start, checked when it would start: a trigger can
+  // wait through an update, a pause, a delete, and the schedule never went through `run.trigger`.
+  private prepare(job: RunJob): boolean {
+    const refuse = (status: "skipped" | "failed", kind: string, message: string) => {
+      this.emit(unstartedReport(job, this.env.now(), status, { kind, message, step_id: null, message_id: null, retry_after: null }));
+      return false;
+    };
+    try {
+      const manifest = this.env.currentManifest(job.stream_id!);
+      if (!manifest) {
+        this.finishUnstarted(job, "stream_deleted");
+        return false;
+      }
+      if (manifest.status !== "active") {
+        this.finishUnstarted(job, manifest.status);
+        return false;
+      }
+      job.pipeline = manifest.pipeline;
+      job.permissions = manifest.permissions;
+      job.permissions_hash = manifest.permissions_hash;
+      job.stream_name = manifest.name;
+      const refusal = this.env.sandboxRefusal();
+      if (refusal) return refuse("skipped", "sandbox_unavailable", refusal);
+      return this.admit(job);
+    } catch (err) {
+      return refuse("failed", "state_invalid", `The stream's state could not be read: ${(err as Error).message}`);
+    }
+  }
+
   private pump(): void {
     if (this.current || this.stopped) return;
     let next = this.waiting.shift();
-    while (next && !this.admit(next.job)) next = this.waiting.shift();
+    while (next && !this.prepare(next.job)) next = this.waiting.shift();
     if (!next) return;
+    const job = next.job;
     const process = new RunProcess(next.job, this.env);
     const finished = process
       .run()
       .then((report) => this.emit(report))
-      .catch((err) => logLine("error", "a run failed outside the supervisor", { error: String(err), run_id: next.job.run_id }))
+      .catch((err) => {
+        logLine("error", "a run failed outside the supervisor", { error: String(err), run_id: job.run_id });
+        // The host must always hear how a run it was told about ended.
+        this.emit(unstartedReport(job, this.env.now(), "failed", { kind: "internal", message: `Internal error: ${(err as Error).message}`, step_id: null, message_id: null, retry_after: null }));
+      })
       .finally(() => {
         this.current = null;
         this.pump();

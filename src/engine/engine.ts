@@ -7,7 +7,7 @@ import { publicComponents } from "../components/definitions.ts";
 import { logLine, type LogLevel } from "../log.ts";
 import { effectiveCeilings, type Ceilings } from "../pipeline/ceilings.ts";
 import { DURATION_PATTERN, parseDuration } from "../pipeline/duration.ts";
-import { DEFAULT_DISPLAY_NAME } from "../pipeline/render.ts";
+import { DEFAULT_DISPLAY_NAME, renderPermissions } from "../pipeline/render.ts";
 import { canonicalJson } from "../pipeline/canonical.ts";
 import { REPORT_SCHEMA } from "../report.ts";
 import { pipelineSchema } from "../pipeline/schema.ts";
@@ -21,6 +21,7 @@ import { ENGINE_NAME, ENGINE_VERSION, PIPELINE_FORMATS, PROTOCOL_VERSIONS, REPOR
 import { checkExpectations, runPipelineTest, type EmbeddedTest, type TestParams } from "../harness/pipeline-test.ts";
 import type { RunProcess } from "../supervisor/supervisor.ts";
 import { HOST_TOOLS_SUGGESTED, TOOLS, withToolResult } from "../tools/tools.ts";
+import { truncateResult } from "../tools/truncate.ts";
 import { parseCron } from "../scheduler/cron.ts";
 import { nextOccurrences } from "../scheduler/occurrences.ts";
 import { Scheduler } from "../scheduler/scheduler.ts";
@@ -32,6 +33,7 @@ import type { SupervisorEnv } from "../supervisor/supervisor.ts";
 
 export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
 export const DEFAULT_HOST_RESPONSE_MS = 120_000;
+const MAX_REPORT_BYTES = 3 * 1024 * 1024;
 
 export interface EngineOptions {
   write(line: string): void;
@@ -41,7 +43,7 @@ export interface EngineOptions {
   // Argv prefix that re-executes the binary; tests running in-process point it at the compiled one.
   command?: string[];
   // Only tests in this repository set these.
-  test?: SupervisorEnv["test"] & { memorySampleMs?: number; noSchedulerTimer?: boolean };
+  test?: SupervisorEnv["test"] & { memorySampleMs?: number; noSchedulerTimer?: boolean; noSandbox?: boolean };
 }
 
 export class Engine {
@@ -59,6 +61,7 @@ export class Engine {
   private scheduler: Scheduler | null = null;
   private liveNetworkInTests = false;
   private readonly activeTests = new Set<RunProcess>();
+  private readonly testsFinished = new Set<Promise<unknown>>();
 
   constructor(private readonly options: EngineOptions) {
     this.now = options.now ?? (() => new Date());
@@ -156,10 +159,20 @@ export class Engine {
       throw new RpcError("conflict", "Another engine holds the lock on this state directory.", { reason: "engine_lock_held" });
     }
     this.releaseLock = release;
+    try {
+      return this.setUp(params, stateDir, ceilings, hostResponseMs);
+    } catch (err) {
+      this.releaseLock = null;
+      release();
+      throw err;
+    }
+  }
+
+  private setUp(params: any, stateDir: string, ceilings: Ceilings, hostResponseMs: number): unknown {
     mkdirSync(join(stateDir, "streams"), { recursive: true, mode: 0o700 });
     // Left behind if an earlier engine died mid-run. We hold the lock, so nothing is using it.
     rmSync(join(stateDir, "run-tmp"), { recursive: true, force: true });
-    this.sandbox = probeSandbox();
+    this.sandbox = this.options.test?.noSandbox ? { available: false, path: null, reason: "Disabled for this test." } : probeSandbox();
     this.sandboxRequired = params.sandbox !== "optional";
     const sandboxAvailable = this.sandbox.available;
     const capabilities = params.capabilities ?? {};
@@ -171,7 +184,9 @@ export class Engine {
       sandboxAvailable,
       llmReportsCost: capabilities.llm_reports_cost === true,
     };
-    this.streams = new StreamStore(join(stateDir, "streams"));
+    this.streams = new StreamStore(join(stateDir, "streams"), (name, err) => {
+      logLine("error", "a stream's manifest cannot be read; it is left out", { stream_id: name, error: String(err) });
+    });
     this.liveNetworkInTests = capabilities.live_network_in_tests === true;
     this.supervisorEnv = {
       hostPeer: this.peer,
@@ -193,9 +208,14 @@ export class Engine {
         this.peer.notify("run.started", { run_id: job.run_id, stream_id: job.stream_id, trigger: job.trigger, scheduled_for: job.scheduled_for, started_at: startedAt });
       },
     };
-    this.queue = new RunQueue({ ...this.supervisorEnv, emitFinished: (report) => {
+    this.queue = new RunQueue({
+      ...this.supervisorEnv,
+      currentManifest: (streamId) => this.streams.get(streamId),
+      sandboxRefusal: () => (!sandboxAvailable && this.sandboxRequired ? `This host requires the OS sandbox and it is not available: ${this.sandbox.reason}` : null),
+      emitFinished: (report) => {
         this.log("info", "run finished", { run_id: report.run_id, stream_id: report.stream_id, status: report.status });
-        this.peer.notify("run.finished", { report });
+        // Capped pieces make this far smaller already; a report that vanished would leave the host guessing.
+        this.peer.notify("run.finished", { report: truncateResult(report, MAX_REPORT_BYTES) });
       },
     });
     if (params.clock === "engine") {
@@ -264,7 +284,7 @@ export class Engine {
       if (test.network === "live" && !this.liveNetworkInTests) {
         throw new RpcError("permission_denied", "This host does not allow live network in tests.");
       }
-      return runPipelineTest(
+      const running = runPipelineTest(
         { ...test, pipeline: params.pipeline, permissions: result.permissions, permissions_hash: result.permissions_hash },
         this.supervisorEnv,
         ctx.signal,
@@ -273,6 +293,9 @@ export class Engine {
           else this.activeTests.delete(process);
         },
       );
+      this.testsFinished.add(running);
+      void running.finally(() => this.testsFinished.delete(running)).catch(() => {});
+      return running;
     };
     if (params.run_embedded !== true) {
       return once({ input: params.input, llm: params.llm, fixtures: params.fixtures, network: params.network, clock: params.clock, state: params.state });
@@ -375,7 +398,7 @@ export class Engine {
     // Never approved: nothing is pinned, so this just replaces what is waiting.
     if (!manifest.pinned) {
       this.save(manifest, { ...next, name: params.pipeline.name });
-      return answer("pending_approval", sentenceDiff(next.rendered, manifest.rendered));
+      return answer("pending_approval", sentenceDiff(next.rendered, this.sentences(manifest, manifest)));
     }
 
     const previous = this.streams.previous(manifest.stream_id);
@@ -386,7 +409,11 @@ export class Engine {
       this.streams.savePrevious(manifest.stream_id, previousOf(manifest));
       const pinned = isRollback ? previous.pinned : manifest.pinned;
       const updated = this.save(manifest, { ...next, name: params.pipeline.name, status, pending: null, pinned });
-      if (updated.status !== manifest.status) this.announceStatus(updated, isRollback ? "rolled_back" : "update_applied");
+      if (updated.status !== manifest.status) {
+        this.announceStatus(updated, isRollback ? "rolled_back" : "update_applied");
+        // It could not run while waiting, so what passed meanwhile is not made up.
+        if (updated.status === "active") this.scheduler?.markActivated(updated);
+      }
       return answer(updated.status);
     }
 
@@ -394,7 +421,14 @@ export class Engine {
     const updated = this.save(manifest, { status: "pending_approval", pending: { ...next, resume_status: status } });
     await this.queue.cancelStream(manifest.stream_id, "pending_approval", false);
     if (manifest.status !== updated.status) this.announceStatus(updated, "permissions_widened");
-    return answer("pending_approval", sentenceDiff(next.rendered, manifest.rendered));
+    return answer("pending_approval", sentenceDiff(next.rendered, this.sentences(manifest, manifest)));
+  }
+
+  // Rendered on each read and not taken from the manifest. Whether the sandbox works, whether the host
+  // reports cost and what it is called are facts of this engine and this host, not of the pipeline, and
+  // a sentence must not say "OS sandbox: on" because it once was. The hash covers none of them.
+  private sentences(pinned: PinnedPipeline, manifest: Manifest): string[] {
+    return withDescription(renderPermissions(pinned.permissions, this.context), manifest.schedule_description);
   }
 
   // The host learns of it through its own tool loop only if it looks; a status it must act on is announced.
@@ -424,8 +458,9 @@ export class Engine {
 
   private async deleteStream(params: any): Promise<unknown> {
     const manifest = this.manifest(params);
+    this.streams.forget(manifest.stream_id);
     await this.queue.cancelStream(manifest.stream_id, "stream_deleted", true);
-    this.streams.remove(manifest.stream_id);
+    this.streams.removeFiles(manifest.stream_id);
     return { stream_id: manifest.stream_id, status: "deleted" };
   }
 
@@ -439,9 +474,9 @@ export class Engine {
       pipeline: m.pipeline,
       permissions: m.permissions,
       permissions_hash: m.permissions_hash,
-      rendered: m.rendered,
+      rendered: this.sentences(m, m),
       ...(previous ? { previous_pipeline: previous.pipeline } : {}),
-      ...(m.pending ? { pending: { pipeline: m.pending.pipeline, permissions: m.pending.permissions, permissions_hash: m.pending.permissions_hash, rendered: m.pending.rendered } } : {}),
+      ...(m.pending ? { pending: { pipeline: m.pending.pipeline, permissions: m.pending.permissions, permissions_hash: m.pending.permissions_hash, rendered: this.sentences(m.pending, m) } } : {}),
       created_at: m.created_at,
       updated_at: m.updated_at,
       next_run: this.scheduler?.nextRun(m) ?? null,
@@ -455,7 +490,7 @@ export class Engine {
       status: m.status,
       permissions_hash: m.pending?.permissions_hash ?? m.permissions_hash,
       next_run: this.scheduler?.nextRun(m) ?? null,
-      permission_sentences: m.pending?.rendered ?? m.rendered,
+      permission_sentences: this.sentences(m.pending ?? m, m),
     };
   }
 
@@ -486,7 +521,11 @@ export class Engine {
   private stop(timeoutMs: number): Promise<void> {
     this.stopping ??= (async () => {
       this.scheduler?.stop();
-      for (const test of this.activeTests) test.cancel("shutdown");
+      // A test is worth nothing once the host is leaving, so it does not get the drain a real run does.
+      for (const test of this.activeTests) {
+        test.killWith({ status: "cancelled", error: { kind: "cancelled", message: "The engine shut down during the test.", step_id: null, message_id: null, retry_after: null, reason: "shutdown" } });
+      }
+      await Promise.allSettled(this.testsFinished);
       await this.queue?.drain(timeoutMs);
       this.releaseLock?.();
       this.releaseLock = null;

@@ -218,6 +218,53 @@ describe("the proxy on its own", () => {
     });
   const auth = (token: string) => `Proxy-Authorization: Basic ${Buffer.from(`run:${token}`).toString("base64")}\r\n`;
 
+  test("what a closing server already sent still reaches a slow client", async () => {
+    const size = 6 * 1024 * 1024;
+    const upstream = Bun.listen({
+      hostname: "127.0.0.1",
+      port: 0,
+      socket: {
+        open(socket) {
+          socket.data = new Uint8Array(size).fill(120);
+          const left = socket.write(socket.data);
+          socket.data = socket.data.subarray(left);
+          if (socket.data.length === 0) socket.end();
+        },
+        drain(socket) {
+          const left = socket.write(socket.data);
+          socket.data = socket.data.subarray(left);
+          if (socket.data.length === 0) socket.end();
+        },
+        data() {},
+      },
+      data: new Uint8Array(0),
+    });
+    const proxy = startProxy({ allowedHosts: ["example.com"], token: "secret", dial: () => ({ hostname: "127.0.0.1", port: upstream.port }) });
+    const { connect } = await import("node:net");
+    const received = await new Promise<number>((resolve) => {
+      let bytes = 0;
+      let inHeader = true;
+      const client = connect(proxy.port, "127.0.0.1", () => {
+        client.write(`CONNECT example.com:443 HTTP/1.1\r\n${auth("secret")}\r\n`);
+      });
+      client.on("data", (chunk: Buffer) => {
+        if (!inHeader) {
+          bytes += chunk.length;
+          return;
+        }
+        inHeader = false;
+        bytes += chunk.length - (chunk.indexOf("\r\n\r\n") + 4);
+        // Let the server finish and close while nothing is being read.
+        client.pause();
+        setTimeout(() => client.resume(), 500);
+      });
+      client.on("close", () => resolve(bytes));
+    });
+    expect(received).toBe(size);
+    proxy.stop();
+    upstream.stop(true);
+  }, 30_000);
+
   test("without the token: 407", async () => {
     const proxy = startProxy({ allowedHosts: ["example.com"], token: "secret" });
     const answer = await rawConnect(proxy.port, "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n");

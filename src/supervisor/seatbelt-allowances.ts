@@ -7,7 +7,10 @@
 // - dyld-support.sb is Apple's own file of "rules required to bootstrap a process with dyld". Without
 //   it dyld aborts in its cache lookup. Importing it tracks OS changes to the cryptex paths, which a
 //   copy of the paths here would not.
-// - sysctl-read: without it the process aborts at startup. Narrowed to the prefixes below.
+// - sysctl-read: without it the process aborts at startup. Only hw.* is needed.
+// - `(deny default)` under `(version 1)` does not cover process-info: sysctl(KERN_PROCARGS2) read the
+//   argv and environment of any process of the same user, whatever the sysctl rules said. It takes an
+//   explicit `(deny process-info*)`. The self-test checks this stays denied.
 // - Bun needs to read its working directory, or it exits with "An unknown error occurred". The
 //   supervisor makes the private temp directory the working directory.
 // - /usr/share/icu stays denied, so Intl and toLocaleString throw inside a run ("Failed to format a
@@ -19,7 +22,8 @@ export const MEASURED_WITH = { date: "2026-11-03", macos: "27.0.1 (26A434)", arc
 
 export const BASE_RULES = [
   '(import "dyld-support.sb")',
-  '(allow sysctl-read (sysctl-name-prefix "hw.") (sysctl-name-prefix "kern.") (sysctl-name-prefix "machdep.") (sysctl-name-prefix "vm.") (sysctl-name-prefix "sysctl."))',
+  '(allow sysctl-read (sysctl-name-prefix "hw."))',
+  "(deny process-info*)",
   '(allow file-read-data file-read-metadata file-test-existence (literal "/dev/null") (literal "/dev/urandom") (literal "/dev/random"))',
   '(allow file-write-data (literal "/dev/null"))',
 ];

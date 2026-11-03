@@ -54,7 +54,7 @@ export class RpcError extends Error {
 
   static fromObject(error: RpcErrorObject): RpcError {
     const kind = error?.data?.kind;
-    const known = typeof kind === "string" && kind in ERROR_CODES;
+    const known = typeof kind === "string" && Object.hasOwn(ERROR_CODES, kind);
     const { kind: _kind, ...extras } = error?.data ?? {};
     return new RpcError(
       known ? (kind as ErrorKind) : "host_error",

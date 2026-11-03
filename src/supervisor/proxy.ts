@@ -31,6 +31,8 @@ interface Connection {
   toClient: Uint8Array[];
   queued: number;
   tunnelling: boolean;
+  // The server finished; end the client's side once what is queued has reached it.
+  endWhenFlushed: boolean;
 }
 
 function refuse(socket: Socket<Connection>, status: string, extra = ""): void {
@@ -113,7 +115,8 @@ export function startProxy(options: ProxyOptions): RunProxy {
           },
           close(upstream) {
             sockets.delete(upstream);
-            socket.end();
+            if (state.toClient.length > 0) state.endWhenFlushed = true;
+            else socket.end();
           },
           error() {
             socket.end();
@@ -134,7 +137,7 @@ export function startProxy(options: ProxyOptions): RunProxy {
     socket: {
       open(socket) {
         sockets.add(socket);
-        socket.data = { header: [], headerBytes: 0, upstream: null, toUpstream: [], toClient: [], queued: 0, tunnelling: false };
+        socket.data = { header: [], headerBytes: 0, upstream: null, toUpstream: [], toClient: [], queued: 0, tunnelling: false, endWhenFlushed: false };
       },
       data(socket, data) {
         const state = socket.data;
@@ -144,7 +147,7 @@ export function startProxy(options: ProxyOptions): RunProxy {
         }
         // Between CONNECT and the upstream opening, bytes wait in the queue.
         if (state.upstream === null && state.headerBytes === -1) {
-          send(state, null, state.toUpstream, data);
+          if (!send(state, null, state.toUpstream, data)) socket.terminate();
           return;
         }
         state.header.push(data.slice());
@@ -177,6 +180,7 @@ export function startProxy(options: ProxyOptions): RunProxy {
       },
       drain(socket) {
         flush(socket, socket.data.toClient);
+        if (socket.data.endWhenFlushed && socket.data.toClient.length === 0) socket.end();
       },
       close(socket) {
         sockets.delete(socket);

@@ -2,8 +2,8 @@
 // the connection carries on with the next line.
 
 export const MAX_LINE_BYTES = 4 * 1024 * 1024;
-// Between the engine and its run process: both ends are this binary and the limit that protects anyone
-// is the public one above. Large enough for a run's whole input (fixtures, a pipeline, a state file).
+// From the engine to its run process only: the run's whole input (a pipeline, fixtures). Anything coming
+// back, and anything reaching a host, keeps to the public limit above.
 export const MAX_PRIVATE_LINE_BYTES = 128 * 1024 * 1024;
 const NEWLINE = 10;
 

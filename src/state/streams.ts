@@ -52,11 +52,19 @@ export interface PreviousManifest extends PinnedPipeline {
 export class StreamStore {
   private readonly streams = new Map<string, Manifest>();
 
-  constructor(private readonly root: string) {
+  constructor(
+    private readonly root: string,
+    onUnreadable: (name: string, err: unknown) => void,
+  ) {
     for (const entry of readdirSync(root, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
-      const manifest = readJson<Manifest>(join(root, entry.name, "manifest.json"));
-      if (manifest) this.streams.set(manifest.stream_id, manifest);
+      try {
+        const manifest = readJson<Manifest>(join(root, entry.name, "manifest.json"));
+        if (manifest) this.streams.set(manifest.stream_id, manifest);
+      } catch (err) {
+        // One bad file must not take the other streams down with it.
+        onUnreadable(entry.name, err);
+      }
     }
   }
 
@@ -85,8 +93,12 @@ export class StreamStore {
     writeJsonAtomic(join(this.dir(streamId), "manifest.previous.json"), previous);
   }
 
-  remove(streamId: string): void {
-    rmSync(this.dir(streamId), { recursive: true, force: true });
+  // Gone from every view at once, before its files go, so nothing new can start for it meanwhile.
+  forget(streamId: string): void {
     this.streams.delete(streamId);
+  }
+
+  removeFiles(streamId: string): void {
+    rmSync(this.dir(streamId), { recursive: true, force: true });
   }
 }
