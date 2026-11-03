@@ -1,6 +1,6 @@
 # Test mocks: replace a step with fixed data, conditionally
 
-Source: [test-mocks grilling record](../inbox/2026W45/test-mocks.md) (decisions 1–9, 2026-11-03), [agent-surface](agent-surface.md#pipeline-tests), [composition](composition.md) (the `condition` type and unit attribution), [ADR 003](../decisions/003-no-expression-language.md), Redpanda Connect unit testing (https://docs.redpanda.com/redpanda-connect/configuration/unit_testing/, read 2026-11-03; summarised in [Benthos research](../research/research-benthos.md) §7). Stage: **Design — spec; nothing implemented.**
+Source: [test-mocks grilling record](../inbox/2026W45/test-mocks.md) (decisions 1–14, 2026-11-03), [agent-surface](agent-surface.md#pipeline-tests), [composition](composition.md) (the `condition` type and unit attribution), [ADR 003](../decisions/003-no-expression-language.md), Redpanda Connect unit testing (https://docs.redpanda.com/redpanda-connect/configuration/unit_testing/, read 2026-11-03; summarised in [Benthos research](../research/research-benthos.md) §7). Stage: **Design — spec; nothing implemented.**
 
 ## Scope
 
@@ -24,7 +24,7 @@ What already exists and stays: `inject`, `input`, `fixtures`, `network`, `llm`, 
 - The key is a processor step `id`. Inputs and outputs have no `id` and cannot be mocked.
 - A mock without `cases` is shorthand for one case without `when`.
 - `when` is a [`condition`](composition.md#condition). The first case whose `when` is true wins. A case without `when` matches everything and must be last.
-- `replies` only on `host_llm`; on `host_llm`, only `replies` (proposal 3 below).
+- `replies` only on `host_llm`; on `host_llm`, only `replies` (decision 10 below).
 - `fail.code` must be a code the real component produces and a `try` can catch (decision 9). `message` defaults to `"Mocked failure."`.
 - Ceilings, reported by `components.list` like the other compiled-in ceilings: at most 20 cases per mock, 500 messages per case (`parse_feed`'s own `max_entries`), 100 replies per case.
 
@@ -52,7 +52,7 @@ A mocked step does not run. Its config is still validated as part of the pipelin
 
 ### Ids and metadata
 
-- A mocked step keeps its component's id rule. A step that does not preserve ids numbers what it emits as the real step would (`<id>.<n>`). A step that preserves ids may emit zero or one message per unit; one keeps the incoming id (proposal 2).
+- A mocked step keeps its component's id rule. A step that does not preserve ids numbers what it emits as the real step would (`<id>.<n>`). A step that preserves ids may emit zero or one message per unit; one keeps the incoming id (decision 9 below).
 - A mocked `http_fetch` sets `meta.source_url` to the unit's URL on every message it emits, because that is the unit's identity, not data from the network. A mock that sets `meta.source_url` itself fails validation with `mock_shape_mismatch`.
 - Otherwise `meta` of an emitted message is the incoming message's `meta` overlaid with the mock's `meta`.
 
@@ -60,14 +60,14 @@ A mocked step does not run. Its config is still validated as part of the pipelin
 
 - A mocked `host_llm` is never answered by `llm`. Unmocked `host_llm` steps are answered by `llm` as today.
 - A mocked `http_fetch` ignores `fixtures` and `network`, including `network: "live"`. Unmocked fetches behave as today.
-- `retry` on a mocked step is not exercised: `fail` is final for that unit (proposal 5). Retry is tested with `fixtures`.
+- `retry` on a mocked step is not exercised: `fail` is final for that unit (decision 12 below). Retry is tested with `fixtures`.
 - The composition harness clamp stays: replies are given in order within a case, so concurrency is still clamped to 1 under `pipeline.test`.
 
 ## Validation
 
 Mocks are validated with the pipeline: embedded `tests[].mocks` by `pipeline.validate` and `stream.create`/`stream.update` (paths `/tests/<i>/mocks/<id>/…`), and `pipeline.test.mocks` before the run (paths `/mocks/<id>/…`), as the same issue list as pipeline errors.
 
-**Shape (decision 6, implemented by proposal 1).** For each test, the validator walks the pipeline again with each mocked step's output shape replaced by the shape its mock emits:
+**Shape (decision 6, implemented by decision 8 below).** For each test, the validator walks the pipeline again with each mocked step's output shape replaced by the shape its mock emits:
 
 - Every field in a mock message must exist in the step's declared output shape with a matching kind, otherwise `mock_shape_mismatch`. `null` is accepted for any scalar field (open point 1).
 - The emitted shape is the declared shape restricted to the fields that every message of every `messages` case carries. `fail` cases emit nothing and are not counted. A `replies` mock writes a string to `target`, as the real step does.
@@ -79,7 +79,7 @@ Mocks are validated with the pipeline: embedded `tests[].mocks` by `pipeline.val
 | Code | When |
 | --- | --- |
 | `unknown_step` | the key is not a processor step id in the pipeline |
-| `mock_unreachable` | the step sits inside a container that is itself mocked (proposal 4) |
+| `mock_unreachable` | the step sits inside a container that is itself mocked (decision 11 below) |
 | `invalid_mock` | structure: no or two outcomes in a case, a default case not last, `replies` on a step that is not `host_llm`, `messages` or `fail` on `host_llm`, a ceiling exceeded, a `fail.code` the component cannot produce |
 | `changes_message_ids` | an id-preserving step's case emits more than one message (the code from composition) |
 | `mock_shape_mismatch`, `mock_missing_field` | as above |
@@ -106,7 +106,7 @@ These land with the tickets, in the same commit:
 1. **[agent-surface](agent-surface.md)**: `mocks` in the `pipeline.test` parameter table and in `tests[]`; `mocked` in reports; the fixture-authoring risk names `mocks` as the mitigation.
 2. **[host-protocol](host-protocol.md)**: `pipeline.test` params gain `mocks`; `mock_unmatched` joins the report-only error kinds.
 3. **[pipeline-format](pipeline-format.md)**: `tests[]` gains `mocks`; the validation codes above.
-4. **[composition](composition.md)**: `mock_unmatched` joins what `try` cannot catch; the test-harness section points to per-step `replies`; mocking containers (proposal 4) once nested steps exist.
+4. **[composition](composition.md)**: `mock_unmatched` joins what `try` cannot catch; the test-harness section points to per-step `replies`; mocking containers (decision 11 below).
 
 ## Worked example
 
@@ -159,13 +159,13 @@ Inherited from the grilling record:
 6. **`fail` is limited to catchable codes the real component produces** (decision 9), so a mock cannot simulate a failure the pipeline could never see.
 7. **No callbacks** (ADR 003).
 
-Proposed while writing this spec; **not yet accepted by Hong**:
+Proposed while writing this spec and accepted by Hong in round 3 of the grilling record (decisions 10–14, 2026-11-03):
 
-1. **Decision 6 is implemented by narrowing the shape, not by an index of reads.** The validator already checks every pointer against the shape at each step; replacing the mocked step's output shape and walking again gives "required = what downstream reads" with no new machinery. An unresolved pointer that only the mock causes is reported as `mock_missing_field` at the mock, since that is what the agent must change.
-2. **A mock cannot change whether a step preserves ids.** An id-preserving step's case emits zero or one message. Otherwise a mocked step inside a `while` body or a `workflow` branch would break composition decision 16 in the test only.
-3. **`host_llm` is mocked only through `replies`.** `messages` or `fail` there would skip prompt rendering, `llm_requests[]` and the call count, which are what a test of a model step is for. Decision 7 allowed `messages` on any step; this narrows it for `host_llm`.
-4. **Mocking a container replaces all of it.** Its steps do not run, and a mock on a step inside it is `mock_unreachable` rather than silently ignored. `collect`'s unit is its batch, which `when` sees as `{ items, count }`.
-5. **`fail` is final; `retry` is not exercised on a mocked step.** Simulating attempts would need a per-attempt outcome list, which is more format for a behaviour `fixtures` already test.
+8. **Decision 6 is implemented by narrowing the shape, not by an index of reads.** The validator already checks every pointer against the shape at each step; replacing the mocked step's output shape and walking again gives "required = what downstream reads" with no new machinery. An unresolved pointer that only the mock causes is reported as `mock_missing_field` at the mock, since that is what the agent must change.
+9. **A mock cannot change whether a step preserves ids.** An id-preserving step's case emits zero or one message. Otherwise a mocked step inside a `while` body or a `workflow` branch would break composition decision 16 in the test only.
+10. **`host_llm` is mocked only through `replies`.** `messages` or `fail` there would skip prompt rendering, `llm_requests[]` and the call count, which are what a test of a model step is for. Decision 7 allowed `messages` on any step; this narrows it for `host_llm`.
+11. **Mocking a container replaces all of it.** Its steps do not run, and a mock on a step inside it is `mock_unreachable` rather than silently ignored. `collect`'s unit is its batch, which `when` sees as `{ items, count }`.
+12. **`fail` is final; `retry` is not exercised on a mocked step.** Simulating attempts would need a per-attempt outcome list, which is more format for a behaviour `fixtures` already test.
 
 ## Risks
 

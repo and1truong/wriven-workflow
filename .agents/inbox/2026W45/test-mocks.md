@@ -1,6 +1,6 @@
 # Mock trong test: thay một bước bằng dữ liệu cố định, có điều kiện
 
-Ghi nhận ngày 2026-11-03. Giai đoạn SDLC: **Design — đã grilling hai lượt, đã viết spec, chưa có ticket, chưa có code.** Bản ghi không phải bằng chứng đã triển khai.
+Ghi nhận ngày 2026-11-03. Giai đoạn SDLC: **Design — đã grilling ba lượt, đã viết spec và ticket, chưa có code.** Bản ghi không phải bằng chứng đã triển khai.
 
 ## Ý định (theo lời Hong)
 
@@ -41,6 +41,16 @@ Viết ví dụ ra thì thấy hai chỗ hở: shape check chặt quá làm mock
 
 **Bỏ có chủ đích:** `willReturnCallback` (chạy code, phạm [ADR 003](../../decisions/003-no-expression-language.md)).
 
+## Lượt 3 (2026-11-03): năm lựa chọn do spec đề xuất
+
+Khi viết [spec test-mocks](../../specs/test-mocks.md), cháu gặp năm chỗ hai lượt trên chưa trả lời. Hong: "Yes cả năm".
+
+10. **Quyết định 6 làm bằng cách thu hẹp shape, không cần chỉ mục "bước nào đọc gì".** Validator đi lại pipeline, lấy output shape của bước bị mock là phần shape mà mọi mock message đều có. Bước sau đọc field mock thiếu thì báo `mock_missing_field` tại mock, nêu field và bước đọc nó. Pointer check của chính bước bị mock thì bỏ qua.
+11. **Mock không được đổi việc bước có giữ message id hay không.** Bước giữ id thì mỗi case phát 0 hoặc 1 message, nhiều hơn thì `changes_message_ids`. Không vậy thì một bước bị mock trong `while` phạm quyết định 16 bên composition mà chỉ lộ trong test.
+12. **`host_llm` chỉ mock bằng `replies`.** `messages` ở đó sẽ bỏ qua render prompt, `llm_requests[]` và budget, đúng những thứ test một bước gọi model cần kiểm. Hẹp hơn quyết định 7.
+13. **Mock một container là thay cả container.** Bước bên trong không chạy; mock một bước nằm trong container đã bị mock thì `mock_unreachable`. Đơn vị của `collect` là cả batch, `when` thấy `{ items, count }`.
+14. **`fail` là cuối cùng; `retry` không chạy trên bước bị mock.** Retry vẫn test bằng `fixtures`.
+
 ## Ví dụ đã đưa Hong (feed-digest-filter, ba URL trả khác nhau)
 
 ```json
@@ -72,4 +82,5 @@ Viết ví dụ ra thì thấy hai chỗ hở: shape check chặt quá làm mock
 ## Liên quan
 
 - Spec: [test-mocks](../../specs/test-mocks.md) (2026-11-03)
+- Ticket: [test-mocks-01](../../tickets/test-mocks-01-step-mocks.md), [test-mocks-02](../../tickets/test-mocks-02-cases-fail.md)
 - [composition-components](composition-components.md), [agent-surface](../../specs/agent-surface.md#pipeline-tests), [composition](../../specs/composition.md)

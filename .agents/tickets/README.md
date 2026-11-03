@@ -18,6 +18,13 @@ From [composition](../specs/composition.md). Each ticket updates the specs its "
 8. [composition-08-while](composition-08-while.md) — `while`, `changes_message_ids`, iteration-qualified `host.llm` keys.
 9. [composition-09-workflow](composition-09-workflow.md) — DAG of branches, exact dependency inference, `cycle`, `write_conflict`, skips.
 
+## Test mocks
+
+From [test-mocks](../specs/test-mocks.md). Each ticket updates the specs it names, in the same commit. Order: 01, then 02. Independent of the composition chain, except that 02's `try` check needs composition-06.
+
+1. [test-mocks-01-step-mocks](test-mocks-01-step-mocks.md) — `mocks` keyed by step id: fixed `messages` on any processor, `replies` on `host_llm`; the narrowing shape check; `mocked` in the report.
+2. [test-mocks-02-cases-fail](test-mocks-02-cases-fail.md) — `cases` chosen by `when` per unit, `fail` with declared catchable codes, `mock_unmatched`; the spec's worked example.
+
 ## Engine v0
 
 1. [engine-01-serve-handshake-fake-host](completed/2026w45/engine-01-serve-handshake-fake-host.md) — `serve` speaks JSON-RPC over stdio, `initialize`/`shutdown`, exits on stdin EOF; `fake-host`; `--version`; `doctor` (presence check). Fixture 1.
