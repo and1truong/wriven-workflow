@@ -14,6 +14,7 @@ One JSON file per scenario: the lines a host sends and what it must see. `wriven
 | `08-stdin-eof-during-run` | The host goes away: `run.finished` cancelled, exit 0 |
 | `09-two-engines` | A second engine on one `state_dir` fails `conflict` |
 | `10-sandbox-unavailable` | `sandbox: required` with no `sandbox-exec`: refused at trigger |
+| `11-concurrent-llm` | A host declaring `llm_concurrency: 2` sees two `host.llm` requests from two `workflow` branches before answering either; cancel sends `$/cancel` for both |
 
 ## Format
 

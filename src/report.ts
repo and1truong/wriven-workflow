@@ -38,6 +38,8 @@ export interface ReportStep {
   // Nested steps only: the container's id, and how many times the step ran; counts are summed.
   parent?: string;
   invocations?: number;
+  // A workflow's branches: how many messages each skipped.
+  branches?: Record<string, { skipped: number }>;
 }
 
 export interface RunReport {
@@ -125,6 +127,7 @@ export const REPORT_SCHEMA: JsonSchema = {
           duration_ms: { type: "number" },
           parent: { type: "string" },
           invocations: { type: "integer" },
+          branches: { type: "object", additionalProperties: { type: "object", required: ["skipped"], properties: { skipped: { type: "integer" } } } },
         },
       },
     },

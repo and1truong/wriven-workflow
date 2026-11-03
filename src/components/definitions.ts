@@ -10,6 +10,7 @@ import { nextOccurrences } from "../scheduler/occurrences.ts";
 import { isValidZone } from "../scheduler/zone.ts";
 import { checkCondition } from "../pipeline/condition.ts";
 import { containsType, preservesIds } from "../pipeline/tree.ts";
+import { branchDependencies, branchOrder, pointersOverlap, transitiveDependencies } from "../pipeline/workflow.ts";
 import type { ComponentDef } from "./types.ts";
 
 const pointer = { type: "string", pattern: POINTER_PATTERN, patternMessage: "This must be a JSON Pointer such as /summary." };
@@ -333,6 +334,82 @@ const whileDef: ComponentDef = {
   },
 };
 
+const workflowDef: ComponentDef = {
+  type: "workflow",
+  kind: "processor",
+  summary:
+    "Run branches, each on a child of every message: the value at from (default: a copy of the whole message), through its steps, then the value at result (default: the root) written to target in the message. A branch waits for siblings whose target its from overlaps and for those in after; branches with no path between them run concurrently. A message whose from is missing, or whose child a step dropped, is skipped by that branch. Branch steps must keep message ids.",
+  properties: {
+    branches: {
+      type: "array",
+      minItems: 1,
+      maxItems: 16,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "steps", "target"],
+        properties: {
+          id: { type: "string", pattern: "^[a-z][a-z0-9_]{0,31}$" },
+          from: pointer,
+          steps: stepList,
+          result: pointer,
+          target: pointer,
+          after: { type: "array", maxItems: 16, items: { type: "string" } },
+        },
+      },
+    },
+  },
+  required: ["branches"],
+  preservesIds: true,
+  children: (config) => (Array.isArray(config.branches) ? config.branches : []).map((b: any, i: number) => ({ field: `branches/${i}/steps`, steps: b?.steps })),
+  extraIds: (config) => (config.branches as any[]).map((b, i) => ({ id: b.id, field: `branches/${i}/id` })),
+  walk(config, shape, ctx) {
+    const branches = config.branches as any[];
+    const index = new Map(branches.map((b, i) => [b.id, i]));
+    branches.forEach((b, i) => {
+      (b.after ?? []).forEach((name: string, j: number) => {
+        if (!index.has(name) || name === b.id) ctx.error("schema", `branches/${i}/after/${j}`, `${name} is not another branch of this workflow.`);
+      });
+      (b.steps as any[]).forEach((step, k) => {
+        if (!preservesIds(step)) ctx.error("changes_message_ids", `branches/${i}/steps/${k}/type`, `${step.type} makes new message ids, so its results could not be written back to their messages; branch steps must keep ids.`);
+      });
+      for (const other of branches.slice(0, i)) {
+        if (pointersOverlap(b.target, other.target)) ctx.error("write_conflict", `branches/${i}/target`, `${b.target} overlaps ${other.target}, the target of branch ${other.id}.`);
+      }
+    });
+    // Past a broken graph nothing downstream can be checked; unknown keeps errors to the cause.
+    const deps = branchDependencies(branches.filter((b) => (b.after ?? []).every((a: string) => index.has(a))));
+    if (deps.size !== branches.length) return UNKNOWN;
+    const ordered = branchOrder(branches, deps);
+    if ("cycle" in ordered) {
+      ctx.error("cycle", `branches/${index.get(ordered.cycle[0]!)}`, `Branches ${ordered.cycle.join(", ")} wait for each other.`);
+      return UNKNOWN;
+    }
+    const results = new Map<string, Shape>();
+    let out = shape;
+    for (const id of ordered.order) {
+      const i = index.get(id)!;
+      const b = branches[i];
+      // A branch sees the message at the start plus what the branches it waits for wrote.
+      const waited = transitiveDependencies(id, deps);
+      let parent = shape;
+      for (const dep of ordered.order) if (waited.has(dep)) parent = shapeWith(parent, branches[index.get(dep)!].target, results.get(dep)!) ?? parent;
+      const child = b.from === undefined ? parent : (ctx.requirePointer(`branches/${i}/from`, b.from, parent) ?? UNKNOWN);
+      const after = ctx.checkSteps(`branches/${i}/steps`, b.steps, child);
+      const result = b.result === undefined ? after : (ctx.requirePointer(`branches/${i}/result`, b.result, after) ?? UNKNOWN);
+      results.set(id, result);
+      const written = shapeWith(out, b.target, result);
+      if (written === null) ctx.error("unresolved_pointer", `branches/${i}/target`, `The parent of ${b.target} does not exist in the data at this step.`);
+      else out = written;
+    }
+    return out;
+  },
+  permissions(config, draft) {
+    // Branches may run in any order relative to each other.
+    if ((config.branches as any[]).some((b) => containsType(b.steps, "http_fetch"))) draft.fetched = true;
+  },
+};
+
 const DEFAULT_REMEMBER = "30d";
 const DEFAULT_MAX_KEYS = 10_000;
 
@@ -463,7 +540,7 @@ const drop: ComponentDef = {
 
 export const DEDUPE_DEFAULTS = { remember: DEFAULT_REMEMBER, max_keys: DEFAULT_MAX_KEYS };
 
-export const COMPONENTS: ComponentDef[] = [hostTrigger, schedule, inject, httpFetch, parseFeed, dedupe, collect, template, hostLlm, filter, split, log, sleep, forEach, switchDef, tryDef, whileDef, hostResult, drop];
+export const COMPONENTS: ComponentDef[] = [hostTrigger, schedule, inject, httpFetch, parseFeed, dedupe, collect, template, hostLlm, filter, split, log, sleep, forEach, switchDef, tryDef, whileDef, workflowDef, hostResult, drop];
 
 export const COMPONENT_BY_TYPE = new Map(COMPONENTS.map((c) => [c.type, c]));
 

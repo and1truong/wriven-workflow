@@ -33,7 +33,7 @@
 
 - [x] `initialize` capability and ceiling
 - [x] Concurrent dispatch with reserved budget, abort on failure (a semaphore in the supervisor, so a run process cannot exceed what the host granted)
-- [x] Fake host concurrency (`latency_ms`, `peakLlm`); conformance case **moved to [composition-09](../../composition-09-workflow.md)**
+- [x] Fake host concurrency (`latency_ms`, `peakLlm`); conformance case **moved to [composition-09](composition-09-workflow.md)**
 - [x] Harness clamp; specs and host-integration doc updated
 
 Deviations, recorded here:

@@ -44,7 +44,7 @@ Rules of derivation, per component. Every step contributes wherever it sits: the
 | `dedupe` | `state` with its `remember` and `max_keys` |
 | `collect`, `template` | nothing |
 | `try` | `skips_failed_items` if its `catch` is `[]`; `handles_failed_items` if its `catch` has steps |
-| `host_llm` | `llm.max_calls_per_run = limits.llm_calls_per_run`; `max_cost_per_run_usd = limits.llm_cost_per_run_usd`; `receives_fetched_content = true` when any `http_fetch` precedes it, or sits anywhere in the same `while` body (a later pass follows it) |
+| `host_llm` | `llm.max_calls_per_run = limits.llm_calls_per_run`; `max_cost_per_run_usd = limits.llm_cost_per_run_usd`; `receives_fetched_content = true` when any `http_fetch` precedes it, or sits anywhere in the same `while` body (a later pass follows it), or in any branch of the same `workflow` (branches may run in any order) |
 | `host_result` | `results.kind = "host"`, `retry` if set |
 | `drop` | `results.kind = "none"` |
 | `limits` | `limits.runs_per_day`, `limits.run_timeout` |

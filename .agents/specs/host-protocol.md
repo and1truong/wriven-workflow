@@ -177,7 +177,7 @@ Sent in `run.finished`, returned by `pipeline.test`, and the thing hosts store.
 }
 ```
 
-Optional fields: `nothing_new` is `true` when a `succeeded` run delivered no result and has no warnings ([delivery-semantics](delivery-semantics.md#decisions-and-reasons)); `cancelled_at_step` names the step a cancelled run was on; `resets_at` is on a `skipped` report; a warning a `try` caught carries `caught_by` (the try's id); a nested step's `steps[]` entry carries `parent` (its container's id) and `invocations`, with counts summed over invocations; `logs` is `[ { "step_id", "message_id", "text" } ]` from `log` steps, at most 100 lines, present only when there are some, followed by a `logs_truncated` warning when more were written ([composition](composition.md#log)). `error` may carry extras from the typed error, such as `limit`, `value`, `host`, `reason`.
+Optional fields: `nothing_new` is `true` when a `succeeded` run delivered no result and has no warnings ([delivery-semantics](delivery-semantics.md#decisions-and-reasons)); `cancelled_at_step` names the step a cancelled run was on; `resets_at` is on a `skipped` report; a warning a `try` caught carries `caught_by` (the try's id); a nested step's `steps[]` entry carries `parent` (its container's id) and `invocations`, with counts summed over invocations; a `workflow` step's entry carries `branches: { "<branch id>": { "skipped": n } }`; `logs` is `[ { "step_id", "message_id", "text" } ]` from `log` steps, at most 100 lines, present only when there are some, followed by a `logs_truncated` warning when more were written ([composition](composition.md#log)). `error` may carry extras from the typed error, such as `limit`, `value`, `host`, `reason`.
 
 `report_version` changes when a field's meaning changes or a required field is removed. Adding optional fields does not bump it.
 
@@ -202,6 +202,7 @@ The repository ships `fixtures/protocol/` with one JSON file per scenario: the e
 8. Stdin EOF during a run; expect `run.finished` cancelled and exit 0.
 9. Two engines on one `state_dir`; second `initialize` fails `conflict`.
 10. `sandbox: required` with `sandbox-exec` unavailable; expect `sandbox_unavailable` on trigger.
+11. A host declaring `llm_concurrency: 2` that holds calls; expect two `host.llm` requests from two `workflow` branches before either is answered, and `$/cancel` for both on `run.cancel` (added with [composition](composition.md#workflow)).
 
 `wriven-workflow fake-host --conformance <dir>` replays them against an engine; a host author can read them as examples.
 

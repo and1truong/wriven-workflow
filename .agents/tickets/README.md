@@ -2,7 +2,7 @@
 
 Vertical slices for v0, in dependency order. Each is a tracer bullet: it crosses every layer it needs and is demonstrable on its own against the fake host. Blockers are listed in each ticket; the chain below is the intended order, with 09 and 10 able to run in parallel with 04–07 once 03 is done. Finished tickets move to `completed/YYYYwNN/`.
 
-All derive from the [specs](../specs/README.md). All twelve v0 tickets are done and live under `completed/`. The composition tickets below are open.
+All derive from the [specs](../specs/README.md). All twelve v0 tickets and all nine composition tickets are done and live under `completed/`; the test-mocks tickets below are open.
 
 ## Composition (post-v0)
 
@@ -16,7 +16,7 @@ From [composition](../specs/composition.md). Each ticket updates the specs its "
 6. [composition-06-unit-failures-try](completed/2026w45/composition-06-unit-failures-try.md) (done) — per-unit failure reporting in every processor; `try` with no or empty `catch`; `on_error: skip` as sugar; `skips_failed_items`.
 7. [composition-07-catch-worked-example](completed/2026w45/composition-07-catch-worked-example.md) (done) — `catch` with error metadata; `handles_failed_items`; the spec's worked example end to end.
 8. [composition-08-while](completed/2026w45/composition-08-while.md) (done) — `while`, `changes_message_ids`, iteration-qualified `host.llm` keys.
-9. [composition-09-workflow](composition-09-workflow.md) — DAG of branches, exact dependency inference, `cycle`, `write_conflict`, skips.
+9. [composition-09-workflow](completed/2026w45/composition-09-workflow.md) (done) — DAG of branches, exact dependency inference, `cycle`, `write_conflict`, skips.
 
 ## Test mocks
 

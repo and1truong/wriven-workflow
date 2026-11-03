@@ -284,8 +284,15 @@ export class RunProcess {
       this.currentStep = bounded(params.step_id);
     } else if (method === "step.finished") {
       if (this.steps.length < allSteps(this.job.pipeline).length + 2) {
-        const { parent, invocations, ...counts } = params;
-        this.steps.push({ ...counts, step_id: bounded(params.step_id), ...(parent !== undefined ? { parent: bounded(parent), invocations: Number(invocations) || 0 } : {}) } as ReportStep);
+        const { parent, invocations, branches, ...counts } = params;
+        this.steps.push({
+          ...counts,
+          step_id: bounded(params.step_id),
+          ...(parent !== undefined ? { parent: bounded(parent), invocations: Number(invocations) || 0 } : {}),
+          ...(branches && typeof branches === "object"
+            ? { branches: Object.fromEntries(Object.entries(branches).slice(0, 16).map(([id, b]: [string, any]) => [bounded(id), { skipped: Number(b?.skipped) || 0 }])) }
+            : {}),
+        } as ReportStep);
       }
     } else if (method === "warning") {
       if (this.warnings.length >= MAX_WARNINGS) this.warningsOmitted++;

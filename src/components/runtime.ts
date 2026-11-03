@@ -9,6 +9,7 @@ import { parseFeed } from "./parse-feed.ts";
 import { DEDUPE_DEFAULTS, SPLIT_DEFAULT_MAX } from "./definitions.ts";
 import { evaluate } from "../pipeline/condition.ts";
 import { preservesIds } from "../pipeline/tree.ts";
+import { branchDependencies, branchOrder } from "../pipeline/workflow.ts";
 import type { RunState } from "../executor/run-state.ts";
 
 export interface StepContext {
@@ -42,8 +43,11 @@ export interface StepContext {
   // The iteration of each enclosing while, outermost first; empty outside loops.
   iterations: number[];
   // A unit (one message, or one URL of http_fetch) failed. Throws unless a try or on_error: skip
-  // takes it; then the processor carries on without that unit.
-  unitFailed(unit: Message, err: unknown): void;
+  // takes it; then the processor carries on without that unit. `stepId` names the failing step when
+  // a container passes on a failure from inside it.
+  unitFailed(unit: Message, err: unknown, stepId?: string): void;
+  // How many messages a workflow branch skipped, for the report.
+  countSkipped(branchId: string, count: number): void;
   // A warning on behalf of another step, as a try reports what it caught.
   warnFor(warning: { step_id: string; message_id: string | null; code: string; message: string; caught_by?: string }): void;
 }
@@ -256,6 +260,63 @@ const whileProcessor: Processor = async (config, batch, ctx) => {
   return done.sort((a, b) => position.get(a.id)! - position.get(b.id)!);
 };
 
+const workflowProcessor: Processor = async (config, batch, ctx) => {
+  const branches = config.branches as any[];
+  const deps = branchDependencies(branches);
+  // Messages that failed in some branch leave the workflow's output.
+  const failed = new Set<string>();
+  const runBranch = async (branch: any) => {
+    const children: Message[] = [];
+    for (const parent of batch) {
+      if (failed.has(parent.id)) continue;
+      const found = branch.from === undefined ? { found: true as const, value: parent.data } : pointerGet(parent.data, branch.from);
+      if (found.found) children.push({ id: parent.id, data: structuredClone(found.value), meta: { ...parent.meta } });
+    }
+    const out =
+      children.length === 0
+        ? []
+        : await ctx.runSteps(branch.steps, children, {
+            onFailure: (unit, err, stepId) => {
+              failed.add(unit.id);
+              ctx.unitFailed(unit, err, stepId);
+            },
+          });
+    const byId = new Map(out.map((m) => [m.id, m]));
+    let skipped = 0;
+    for (const parent of batch) {
+      if (failed.has(parent.id)) continue;
+      const child = byId.get(parent.id);
+      if (!child) {
+        skipped++;
+        continue;
+      }
+      try {
+        const result = branch.result === undefined ? { found: true as const, value: child.data } : pointerGet(child.data, branch.result);
+        if (!result.found) throw new StepError("unresolved_pointer", `${branch.result} does not exist in what branch ${branch.id} made for message ${parent.id}.`, { message_id: parent.id });
+        write(parent, branch.target, result.value);
+      } catch (err) {
+        failed.add(parent.id);
+        ctx.unitFailed(parent, err);
+      }
+    }
+    ctx.countSkipped(branch.id, skipped);
+  };
+  const ordered = branchOrder(branches, deps);
+  if ("cycle" in ordered) throw new StepError("internal", `Branches ${ordered.cycle.join(", ")} wait for each other.`);
+  if (ctx.testing) {
+    // One at a time in dependency order, so mock replies come in a fixed order.
+    for (const id of ordered.order) await runBranch(branches.find((b) => b.id === id));
+  } else {
+    const started = new Map<string, Promise<void>>();
+    const start = (id: string): Promise<void> => {
+      if (!started.has(id)) started.set(id, Promise.all(deps.get(id)!.map(start)).then(() => runBranch(branches.find((b) => b.id === id))));
+      return started.get(id)!;
+    };
+    await Promise.all(branches.map((b) => start(b.id)));
+  }
+  return batch.filter((m) => !failed.has(m.id));
+};
+
 const filter: Processor = async (config, batch, ctx) => perMessage(batch, ctx, (message) => (evaluate(config.keep_if, message, ctx.now()) ? [message] : []));
 
 const tryProcessor: Processor = async (config, batch, ctx) => {
@@ -273,7 +334,7 @@ const tryProcessor: Processor = async (config, batch, ctx) => {
   return [...out, ...(await ctx.runSteps(config.catch, failed))];
 };
 
-const PROCESSORS: Record<string, Processor> = { http_fetch: httpFetch, parse_feed: parseFeed, dedupe, collect, template, host_llm: hostLlm, filter, split, log, sleep, for_each: forEach, switch: switchProcessor, try: tryProcessor, while: whileProcessor };
+const PROCESSORS: Record<string, Processor> = { http_fetch: httpFetch, parse_feed: parseFeed, dedupe, collect, template, host_llm: hostLlm, filter, split, log, sleep, for_each: forEach, switch: switchProcessor, try: tryProcessor, while: whileProcessor, workflow: workflowProcessor };
 
 export function processorFor(type: string): Processor {
   const processor = PROCESSORS[type];

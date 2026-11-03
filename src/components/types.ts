@@ -42,6 +42,8 @@ export interface ComponentDef {
   required?: string[];
   // The step lists a container holds. Leaves have none.
   children?(config: any): StepList[];
+  // Ids a container names besides its steps' (workflow branches), unique pipeline-wide like step ids.
+  extraIds?(config: any): Array<{ id: string; field: string }>;
   // Containers validate their lists through ctx.checkSteps and return the shape they emit; this
   // replaces `check` and `outputShape`.
   walk?(config: any, shape: Shape, ctx: CheckContext): Shape;

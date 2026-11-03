@@ -137,8 +137,11 @@ function checkStructure(pipeline: any, errors: PipelineIssue[]): void {
   const steps = allSteps(pipeline);
   const seen = new Set<string>();
   for (const step of steps) {
-    if (seen.has(step.config.id)) errors.push({ path: `${step.path}/id`, code: "duplicate_id", message: `The id ${step.config.id} is used twice; step ids are unique across the whole pipeline, nested steps included.` });
-    seen.add(step.config.id);
+    const named = [{ id: step.config.id, field: "id" }, ...(COMPONENT_BY_TYPE.get(step.config.type)?.extraIds?.(step.config) ?? [])];
+    for (const { id, field } of named) {
+      if (seen.has(id)) errors.push({ path: `${step.path}/${field}`, code: "duplicate_id", message: `The id ${id} is used twice; ids are unique across the whole pipeline, nested steps and workflow branches included.` });
+      seen.add(id);
+    }
     if (step.depth === STRUCTURE_LIMITS.nesting_depth + 1) {
       errors.push({ path: step.path, code: "nesting_too_deep", message: `This step is inside ${step.depth} containers; at most ${STRUCTURE_LIMITS.nesting_depth} may nest.` });
     }

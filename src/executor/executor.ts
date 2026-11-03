@@ -18,7 +18,16 @@ export interface ExecutorWorld {
   network(host: string, bytes: number): void;
   denied(host: string): void;
   stepStarted(stepId: string): void;
-  stepFinished(step: { step_id: string; in: number; out: number; dropped: number; duration_ms: number; parent?: string; invocations?: number }): void;
+  stepFinished(step: {
+    step_id: string;
+    in: number;
+    out: number;
+    dropped: number;
+    duration_ms: number;
+    parent?: string;
+    invocations?: number;
+    branches?: Record<string, { skipped: number }>;
+  }): void;
 }
 
 interface NestedStats {
@@ -53,6 +62,8 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
   let touched = false;
   // Nested steps run once per invocation of their container; the report sums them.
   const nested = new Map<string, NestedStats>();
+  // Per workflow step: how many messages each branch skipped, summed over invocations.
+  const skips = new Map<string, Record<string, { skipped: number }>>();
   const context = (id: string, onFailure: FailureHandler | null, iterations: number[]): StepContext => ({
     runId: init.run_id,
     stepId: id,
@@ -71,9 +82,14 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
     runSteps: (steps, batch, options) =>
       runList(steps, batch, id, options?.onFailure ?? onFailure, options?.iteration === undefined ? iterations : [...iterations, options.iteration]),
     iterations,
-    unitFailed: (unit, err) => {
+    unitFailed: (unit, err, stepId = id) => {
       if (onFailure === null || !isCatchable(err)) throw err;
-      onFailure(unit, err, id);
+      onFailure(unit, err, stepId);
+    },
+    countSkipped: (branchId, count) => {
+      const branches = skips.get(id) ?? {};
+      branches[branchId] = { skipped: (branches[branchId]?.skipped ?? 0) + count };
+      skips.set(id, branches);
     },
     warnFor: (warning) => world.warn(warning),
     testing: init.trigger === "test",
@@ -101,11 +117,11 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
     }
     const counts = { in: batch.length, out: out.length, dropped: Math.max(0, batch.length - out.length), duration_ms: Date.now() - started };
     if (parent === null) {
-      world.stepFinished({ step_id: config.id, ...counts });
+      world.stepFinished({ step_id: config.id, ...counts, ...branchesOf(config.id) });
       // A container's own entry first, then the steps it holds in document order.
       for (const inner of walkSteps(childLists(config).flatMap((l) => l.steps), "")) {
         const stats = nested.get(inner.config.id);
-        if (stats) world.stepFinished(stats);
+        if (stats) world.stepFinished({ ...stats, ...branchesOf(inner.config.id) });
       }
     } else {
       const stats = nested.get(config.id) ?? { step_id: config.id, parent, in: 0, out: 0, dropped: 0, duration_ms: 0, invocations: 0 };
@@ -118,6 +134,7 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
     }
     return out;
   };
+  const branchesOf = (stepId: string) => (skips.has(stepId) ? { branches: skips.get(stepId)! } : {});
   const runList = async (steps: any[], batch: Message[], parent: string | null, onFailure: FailureHandler | null, iterations: number[]): Promise<Message[]> => {
     let current = batch;
     for (const config of steps) current = await runStep(config, current, parent, onFailure, iterations);

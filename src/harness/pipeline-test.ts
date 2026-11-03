@@ -31,13 +31,14 @@ export interface TestOutcome {
   results: Array<{ title: string; body: string; format: string }>;
   llm_requests: Array<{ step_id: string; message_id: string; system?: string; prompt: string }>;
   logs: NonNullable<RunReport["logs"]>;
-  // Steps whose concurrency ran at 1 here, so mock replies came in a fixed order: "for_each:<id>".
+  // Steps whose concurrency ran at 1 here, so mock replies came in a fixed order: "for_each:<id>",
+  // "workflow:<id>".
   clamped: string[];
 }
 
 export function clampedSteps(pipeline: any): string[] {
   return allSteps(pipeline)
-    .filter((s) => s.config.type === "for_each" && (s.config.concurrency ?? 1) > 1)
+    .filter((s) => (s.config.type === "for_each" && (s.config.concurrency ?? 1) > 1) || (s.config.type === "workflow" && s.config.branches.length > 1))
     .map((s) => `${s.config.type}:${s.config.id}`);
 }
 

@@ -16,21 +16,21 @@ function sourceFiles(dir: string): string[] {
 }
 
 describe("the conformance fixtures", () => {
-  test("all ten, 10/10 against the binary", async () => {
+  test("all eleven, 11/11 against the binary", async () => {
     const results = await runConformance(CONFORMANCE_DIR, [BINARY]);
     expect(results.filter((r) => !r.passed)).toEqual([]);
-    expect(results.length).toBe(10);
+    expect(results.length).toBe(11);
   }, 120_000);
 
   test("fake-host --conformance reports it and exits 0", () => {
     const out = Bun.spawnSync([BINARY, "fake-host", "--conformance", CONFORMANCE_DIR, "--engine", BINARY], { stdout: "pipe", stderr: "pipe" });
-    expect(out.stdout.toString()).toContain("10/10 scenarios passed");
+    expect(out.stdout.toString()).toContain("11/11 scenarios passed");
     expect(out.exitCode).toBe(0);
   }, 120_000);
 
   test("each scenario in the spec has a file", () => {
     const files = readdirSync(CONFORMANCE_DIR).filter((f) => f.endsWith(".json")).sort();
-    expect(files.map((f) => f.slice(0, 2))).toEqual(["01", "02", "03", "04", "05", "06", "07", "08", "09", "10"]);
+    expect(files.map((f) => f.slice(0, 2))).toEqual(["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11"]);
     for (const file of files) expect(readFileSync(join(CONFORMANCE_DIR, "README.md"), "utf8")).toContain(file.replace(".json", ""));
   });
 });
