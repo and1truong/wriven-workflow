@@ -273,7 +273,7 @@ Fetch three feeds, keep new items about Rust or Zig, note any feed that could no
 ]
 ```
 
-With `limits.llm_calls_per_run: 31`. Classification happens before `collect`, so `max_items: 50` does not bound it. A day with more than 30 matching new items runs out of calls before the digest and fails with `budget_exceeded`, and the run report says so. `take` (tier 2) is what would let the agent bound it in the pipeline itself. The permissions render as the v0 example's, with "Skips a source that cannot be fetched or read that day…" replaced by "When an item fails at a step, handles it with fallback steps instead of stopping, and says so in the run report." and with "at most 31 requests per run".
+With `limits.llm_calls_per_run: 31`. Classification happens before `collect`, so `max_items: 50` does not bound it. A day with more than 30 messages reaching `classify_each` runs out of calls before the digest and fails with `budget_exceeded`, and the run report says so. Failure notes count too, since they pass through `classify_each` like entries. `take` (tier 2) is what would let the agent bound it in the pipeline itself. The permissions render as the v0 example's, with "Skips a source that cannot be fetched or read that day…" replaced by "When an item fails at a step, handles it with fallback steps instead of stopping, and says so in the run report." and with "at most 31 requests per run".
 
 ## Decisions and reasons
 

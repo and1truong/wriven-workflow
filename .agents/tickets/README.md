@@ -2,7 +2,21 @@
 
 Vertical slices for v0, in dependency order. Each is a tracer bullet: it crosses every layer it needs and is demonstrable on its own against the fake host. Blockers are listed in each ticket; the chain below is the intended order, with 09 and 10 able to run in parallel with 04–07 once 03 is done. Finished tickets move to `completed/YYYYwNN/`.
 
-All derive from the [specs](../specs/README.md). All twelve are done and live under `completed/`.
+All derive from the [specs](../specs/README.md). All twelve v0 tickets are done and live under `completed/`. The composition tickets below are open.
+
+## Composition (post-v0)
+
+From [composition](../specs/composition.md). Each ticket updates the specs its "Changes to other specs" entries name, in the same commit. Order: 01 and 02 in parallel; 03 after 01; then 04, 05, 06 and 08 in parallel after 03 (08 also needs 02); 07 after 05 and 06 (its worked example also needs 01 and 04); 09 last, after 04 and 08.
+
+1. [composition-01-condition-filter](composition-01-condition-filter.md) — the declarative `condition` type with shape checks; `filter`.
+2. [composition-02-split-log-sleep](composition-02-split-log-sleep.md) — leaf components; report `logs`; fake-clock `sleep`; `sleep_exceeds_timeout`.
+3. [composition-03-nested-steps-for-each](composition-03-nested-steps-for-each.md) — nested step lists, pipeline-wide ids, ceilings, id-preservation property, permission walk, report `parent`/`invocations`; sequential `for_each`.
+4. [composition-04-concurrent-host-llm](composition-04-concurrent-host-llm.md) — `llm_concurrency` capability, reserved budget, concurrent `for_each`, harness clamp, conformance case.
+5. [composition-05-switch-shape-merging](composition-05-switch-shape-merging.md) — `switch` with its ordering rule; shape merging.
+6. [composition-06-unit-failures-try](composition-06-unit-failures-try.md) — per-unit failure reporting in every processor; `try` with no or empty `catch`; `on_error: skip` as sugar; `skips_failed_items`.
+7. [composition-07-catch-worked-example](composition-07-catch-worked-example.md) — `catch` with error metadata; `handles_failed_items`; the spec's worked example end to end.
+8. [composition-08-while](composition-08-while.md) — `while`, `changes_message_ids`, iteration-qualified `host.llm` keys.
+9. [composition-09-workflow](composition-09-workflow.md) — DAG of branches, exact dependency inference, `cycle`, `write_conflict`, skips.
 
 ## Engine v0
 
