@@ -9,6 +9,7 @@ import { occurrencesPerDay, parseCron } from "../scheduler/cron.ts";
 import { nextOccurrences } from "../scheduler/occurrences.ts";
 import { isValidZone } from "../scheduler/zone.ts";
 import { checkCondition } from "../pipeline/condition.ts";
+import { containsType, preservesIds } from "../pipeline/tree.ts";
 import type { ComponentDef } from "./types.ts";
 
 const pointer = { type: "string", pattern: POINTER_PATTERN, patternMessage: "This must be a JSON Pointer such as /summary." };
@@ -300,6 +301,38 @@ const tryDef: ComponentDef = {
   },
 };
 
+const whileDef: ComponentDef = {
+  type: "while",
+  kind: "processor",
+  summary:
+    "Repeat steps on each message while repeat_while is true for it, at most max_loops times (1-20, required). Checked before each pass, or after the first with at_least_once. steps must keep message ids. At the limit, on_limit fail (default) fails those messages with loop_limit; continue lets them leave with a warning.",
+  properties: {
+    repeat_while: conditionRef,
+    steps: stepList,
+    max_loops: { type: "integer", minimum: 1, maximum: 20 },
+    at_least_once: { type: "boolean" },
+    on_limit: { enum: ["fail", "continue"] },
+  },
+  required: ["repeat_while", "steps", "max_loops"],
+  preservesIds: true,
+  children: (config) => [{ field: "steps", steps: config.steps }],
+  walk(config, shape, ctx) {
+    (config.steps as any[]).forEach((step, i) => {
+      if (!preservesIds(step)) ctx.error("changes_message_ids", `steps/${i}/type`, `${step.type} makes new message ids, so the loop could not tell which message is which; a while body must keep ids.`);
+    });
+    const out = ctx.checkSteps("steps", config.steps, shape);
+    // Without at_least_once a message may leave before the first pass.
+    const seen = config.at_least_once === true ? out : mergeShapes(shape, out);
+    checkCondition(config.repeat_while, "repeat_while", seen, ctx);
+    return seen;
+  },
+  sleepWalk: (config, walk, elapsed, factor) => walk("steps", config.steps, elapsed, factor * config.max_loops),
+  permissions(config, draft) {
+    // A fetch late in the body precedes the next pass's model call.
+    if (containsType(config.steps, "http_fetch")) draft.fetched = true;
+  },
+};
+
 const DEFAULT_REMEMBER = "30d";
 const DEFAULT_MAX_KEYS = 10_000;
 
@@ -430,7 +463,7 @@ const drop: ComponentDef = {
 
 export const DEDUPE_DEFAULTS = { remember: DEFAULT_REMEMBER, max_keys: DEFAULT_MAX_KEYS };
 
-export const COMPONENTS: ComponentDef[] = [hostTrigger, schedule, inject, httpFetch, parseFeed, dedupe, collect, template, hostLlm, filter, split, log, sleep, forEach, switchDef, tryDef, hostResult, drop];
+export const COMPONENTS: ComponentDef[] = [hostTrigger, schedule, inject, httpFetch, parseFeed, dedupe, collect, template, hostLlm, filter, split, log, sleep, forEach, switchDef, tryDef, whileDef, hostResult, drop];
 
 export const COMPONENT_BY_TYPE = new Map(COMPONENTS.map((c) => [c.type, c]));
 

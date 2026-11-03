@@ -27,7 +27,7 @@ export interface StepContext {
   state: RunState;
   // Tells the run that state changed, so a successful run writes it.
   stateTouched(): void;
-  llm(request: { step_id: string; message_id: string; system?: string; messages: Array<{ role: "user"; content: string }>; max_output_tokens?: number }): Promise<any>;
+  llm(request: { step_id: string; message_id: string; iteration?: string; system?: string; messages: Array<{ role: "user"; content: string }>; max_output_tokens?: number }): Promise<any>;
   result(request: { message_id: string; result: { title: string; body: string; format: string } }): Promise<any>;
   // Appends a line to the run report's logs.
   log(messageId: string, text: string): void;
@@ -36,8 +36,11 @@ export interface StepContext {
   // Inside pipeline.test, where concurrency is clamped to 1 so mock replies come in a fixed order.
   testing: boolean;
   // Runs a container's nested steps on a batch. Failures of units inside go to `onFailure` when given
-  // (a try with catch), else wherever this step's own failures go.
-  runSteps(steps: any[], batch: Message[], onFailure?: FailureHandler): Promise<Message[]>;
+  // (a try with catch), else wherever this step's own failures go. `iteration` is the loop iteration
+  // of a while, which nested steps carry in their host.llm keys.
+  runSteps(steps: any[], batch: Message[], options?: { onFailure?: FailureHandler; iteration?: number }): Promise<Message[]>;
+  // The iteration of each enclosing while, outermost first; empty outside loops.
+  iterations: number[];
   // A unit (one message, or one URL of http_fetch) failed. Throws unless a try or on_error: skip
   // takes it; then the processor carries on without that unit.
   unitFailed(unit: Message, err: unknown): void;
@@ -112,6 +115,7 @@ const hostLlm: Processor = async (config, batch, ctx) =>
       reply = await ctx.llm({
         step_id: ctx.stepId,
         message_id: message.id,
+        ...(ctx.iterations.length > 0 ? { iteration: ctx.iterations.join(".") } : {}),
         ...(config.system !== undefined ? { system: config.system } : {}),
         messages: [{ role: "user", content: prompt }],
         ...(config.max_output_tokens !== undefined ? { max_output_tokens: config.max_output_tokens } : {}),
@@ -216,22 +220,60 @@ const switchProcessor: Processor = async (config, batch, ctx) => {
   return out.sort((a, b) => position.get(a.id)! - position.get(b.id)!);
 };
 
+const whileProcessor: Processor = async (config, batch, ctx) => {
+  const position = new Map(batch.map((m, i) => [m.id, i]));
+  const done: Message[] = [];
+  let active = batch;
+  for (let iteration = 1; active.length > 0; iteration++) {
+    const looping: Message[] = [];
+    for (const message of active) {
+      if (iteration === 1 && config.at_least_once === true) {
+        looping.push(message);
+        continue;
+      }
+      try {
+        (evaluate(config.repeat_while, message, ctx.now()) ? looping : done).push(message);
+      } catch (err) {
+        ctx.unitFailed(message, err);
+      }
+    }
+    if (looping.length === 0) break;
+    if (iteration > config.max_loops) {
+      for (const message of looping) {
+        const text = `${message.id} still met repeat_while after ${config.max_loops} loops.`;
+        if (config.on_limit === "continue") {
+          ctx.warn(message.id, "loop_limit", text);
+          done.push(message);
+        } else {
+          ctx.unitFailed(message, new StepError("loop_limit", text, { message_id: message.id }));
+        }
+      }
+      break;
+    }
+    // A message dropped inside the body leaves the loop and the batch.
+    active = await ctx.runSteps(config.steps, looping, { iteration });
+  }
+  return done.sort((a, b) => position.get(a.id)! - position.get(b.id)!);
+};
+
 const filter: Processor = async (config, batch, ctx) => perMessage(batch, ctx, (message) => (evaluate(config.keep_if, message, ctx.now()) ? [message] : []));
 
 const tryProcessor: Processor = async (config, batch, ctx) => {
   // Without catch a try only groups steps: failures go wherever they would have gone.
   if (config.catch === undefined) return ctx.runSteps(config.steps, batch);
   const failed: Message[] = [];
-  const out = await ctx.runSteps(config.steps, batch, (unit, err, stepId) => {
-    ctx.warnFor({ step_id: stepId, message_id: unit.id, code: err.kind, message: err.message, caught_by: ctx.stepId });
-    failed.push({ ...unit, meta: { ...unit.meta, error_step: stepId, error_code: err.kind, error_message: err.message } });
+  const out = await ctx.runSteps(config.steps, batch, {
+    onFailure: (unit, err, stepId) => {
+      ctx.warnFor({ step_id: stepId, message_id: unit.id, code: err.kind, message: err.message, caught_by: ctx.stepId });
+      failed.push({ ...unit, meta: { ...unit.meta, error_step: stepId, error_code: err.kind, error_message: err.message } });
+    },
   });
   if (config.catch.length === 0 || failed.length === 0) return out;
   // Failures inside catch go wherever this try's own failures go.
   return [...out, ...(await ctx.runSteps(config.catch, failed))];
 };
 
-const PROCESSORS: Record<string, Processor> = { http_fetch: httpFetch, parse_feed: parseFeed, dedupe, collect, template, host_llm: hostLlm, filter, split, log, sleep, for_each: forEach, switch: switchProcessor, try: tryProcessor };
+const PROCESSORS: Record<string, Processor> = { http_fetch: httpFetch, parse_feed: parseFeed, dedupe, collect, template, host_llm: hostLlm, filter, split, log, sleep, for_each: forEach, switch: switchProcessor, try: tryProcessor, while: whileProcessor };
 
 export function processorFor(type: string): Processor {
   const processor = PROCESSORS[type];

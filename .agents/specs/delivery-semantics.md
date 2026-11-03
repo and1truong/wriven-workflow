@@ -49,7 +49,7 @@ With `on_error: skip`, a host outside the allowlist on a redirect is skipped lik
 
 | Request | Key | Host must |
 | --- | --- | --- |
-| `host.llm` | `"<run_id>/<step_id>/<message_id>"` | Return the stored reply for a repeated key within the run's lifetime instead of calling the provider again. The engine only repeats a key after a transport failure between engine and host (lost response); it never repeats a key for a different prompt. |
+| `host.llm` | `"<run_id>/<step_id>/<message_id>"`; inside a `while`, `"<run_id>/<step_id>@<iterations>/<message_id>"`, where `<iterations>` is the 1-based iteration of each enclosing `while`, outermost first, joined by `.` ([composition](composition.md#while)). The run process reports the iterations and the supervisor checks them against the pipeline: one per enclosing `while`, each within its `max_loops`. | Return the stored reply for a repeated key within the run's lifetime instead of calling the provider again. The engine only repeats a key after a transport failure between engine and host (lost response); it never repeats a key for a different prompt. |
 | `host.result` | `"<run_id>/<message_id>"` | Not create a second result for a repeated key. |
 
 Keys are also present in the run report, so the host can reconcile what it stored with what the engine thinks happened.

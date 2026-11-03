@@ -23,7 +23,7 @@
   - [host-protocol](../specs/host-protocol.md): conformance scenario 11.
   - [permissions](../specs/permissions.md): the derivation rule.
 
-**Blocked by:** [composition-04](completed/2026w45/composition-04-concurrent-host-llm.md), [composition-08](composition-08-while.md) (for `changes_message_ids`).
+**Blocked by:** [composition-04](completed/2026w45/composition-04-concurrent-host-llm.md), [composition-08](completed/2026w45/composition-08-while.md) (for `changes_message_ids`).
 
 **Verification:**
 - **Execution:**

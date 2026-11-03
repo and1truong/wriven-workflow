@@ -147,7 +147,7 @@ JSON-RPC `error` objects: `code` is an integer in the range -32000 to -32099 for
 
 The engine never retries a `host.llm` error of any kind. It passes `retry_after` through into the report.
 
-A report's `error.kind` may also be one of these, which are never RPC errors because no request failed: `process_exited` (the run process died), `spawn_failed`, `memory_limit`, `unresolved_pointer` and `shape_mismatch` (a pointer that could only be checked at run time), `http_status`, `fetch_failed`, `fetch_timeout`, `body_too_large`, `url_not_allowed`, `fixture_missing`, `feed_invalid`, `state_invalid`, `condition_type_mismatch` (a condition whose field had the wrong type, checked at run time; [composition](composition.md#condition)).
+A report's `error.kind` may also be one of these, which are never RPC errors because no request failed: `process_exited` (the run process died), `spawn_failed`, `memory_limit`, `unresolved_pointer` and `shape_mismatch` (a pointer that could only be checked at run time), `http_status`, `fetch_failed`, `fetch_timeout`, `body_too_large`, `url_not_allowed`, `fixture_missing`, `feed_invalid`, `state_invalid`, `condition_type_mismatch` (a condition whose field had the wrong type, checked at run time; [composition](composition.md#condition)), `loop_limit` (a `while` reached `max_loops` with `on_limit: "fail"`; [composition](composition.md#while)).
 
 ## Run report
 

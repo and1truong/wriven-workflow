@@ -55,3 +55,18 @@ export function preservesIds(config: any): boolean {
 export function containsType(steps: any[], type: string): boolean {
   return walkSteps(steps, "").some((s) => s.config.type === type);
 }
+
+// The containers around a step, outermost first.
+export function ancestorsOf(pipeline: any, id: string): any[] {
+  const find = (steps: any[], chain: any[]): any[] | null => {
+    for (const config of steps) {
+      if (config.id === id) return chain;
+      for (const list of childLists(config)) {
+        const found = find(list.steps, [...chain, config]);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+  return find(pipeline.processors ?? [], []) ?? [];
+}

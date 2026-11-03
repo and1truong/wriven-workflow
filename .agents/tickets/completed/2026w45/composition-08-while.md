@@ -1,6 +1,6 @@
 # composition-08: `while` and loop-aware idempotency keys
 
-**Spec:** [composition](../specs/composition.md#while) (`while`, change 2), [delivery-semantics](../specs/delivery-semantics.md#idempotency-keys), [permissions](../specs/permissions.md) (`receives_fetched_content`). Grilling decisions 5 and 16.
+**Spec:** [composition](../../../specs/composition.md#while) (`while`, change 2), [delivery-semantics](../../../specs/delivery-semantics.md#idempotency-keys), [permissions](../../../specs/permissions.md) (`receives_fetched_content`). Grilling decisions 5 and 16.
 
 **To build:**
 - **`while`.**
@@ -13,9 +13,9 @@
 - **Idempotency key.** Inside a `while`, the `host.llm` key becomes `"<run_id>/<step_id>@<iterations>/<message_id>"`, with 1-based iterations of each enclosing loop, outermost first, joined by `.`. Outside loops it is unchanged.
 - **Permissions.** An `http_fetch` anywhere in the same `while` body sets `receives_fetched_content`.
 - **Spec updates.**
-  - [delivery-semantics](../specs/delivery-semantics.md): the key table.
-  - [permissions](../specs/permissions.md): the derivation rule.
-  - [pipeline-format](../specs/pipeline-format.md): `while`, `changes_message_ids`.
+  - [delivery-semantics](../../../specs/delivery-semantics.md): the key table.
+  - [permissions](../../../specs/permissions.md): the derivation rule.
+  - [pipeline-format](../../../specs/pipeline-format.md): `while`, `changes_message_ids`.
 
 **Blocked by:** [composition-01](completed/2026w45/composition-01-condition-filter.md), [composition-02](completed/2026w45/composition-02-split-log-sleep.md), [composition-03](completed/2026w45/composition-03-nested-steps-for-each.md).
 
@@ -34,9 +34,16 @@
   - a `filter` in the body that drops a message removes it from the output;
   - v0 keys are unchanged.
 
-**Status:** open
+**Status:** done 2026-11-03
 
-- [ ] `while` semantics and ordering
-- [ ] `changes_message_ids`; sleep bound with loops
-- [ ] Iteration-qualified idempotency keys
-- [ ] Permission rule; specs updated
+- [x] `while` semantics and ordering
+- [x] `changes_message_ids`; sleep bound with loops
+- [x] Iteration-qualified idempotency keys (the run process sends `iteration`; the supervisor checks it against the enclosing loops and their `max_loops` before building the key)
+- [x] Permission rule; specs updated (delivery-semantics, host-protocol, pipeline-format, permissions)
+
+Notes:
+- `loop_limit` is a unit failure, so a `try` around a `while` can recover from it; it is not in the uncatchable list.
+- The "fetch in the same `while` body" permission rule cannot be reached through validation today: `http_fetch` makes new ids and a `while` body must keep them. It is kept and tested on the derivation directly, for a later component that fetches and keeps ids.
+- `repeat_while` validates against the body's output shape with `at_least_once`, and against the merge of input and output shapes otherwise.
+
+Tests: `tests/while.test.ts`. One full-suite run saw `tests/sandbox.test.ts` "past run_timeout" fail once (its 500 ms run timeout under load); the next two full runs and three standalone runs passed. Not changed here.

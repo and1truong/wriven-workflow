@@ -98,6 +98,7 @@ Containers hold step lists; a nested step has the same shape as a top-level proc
 
 - **`for_each`**: runs `steps` on each message as a batch of one, outputs in input order. Permission: none of its own.
 - **`try`**: runs `steps`; a unit that fails at one of them leaves them, and goes through `catch` (with `meta.error_step`, `error_code`, `error_message`), is dropped (`catch: []`) or fails the run (no `catch`). Permission: `skips_failed_items` with `catch: []`, `handles_failed_items` with `catch` steps.
+- **`while`**: repeats `steps` per message while `repeat_while` holds, at most `max_loops` (required, 1–20); the body must keep message ids (`changes_message_ids`). Permission: none of its own.
 - **`switch`**: routes each message to the first case whose `when` holds; unmatched go to `default` or pass through. Permission: none of its own.
 - **`filter`**: keeps the messages for which `keep_if`, a [`condition`](composition.md#condition), is true. Permission: none.
 - **`split`**: one message per element of the array at `field`. Permission: none.
@@ -132,7 +133,7 @@ Engine-wide ceilings (the upper ends above) are compiled in and reported by `com
 
 ## Validation
 
-`pipeline.validate` returns either `{ "valid": true, "permissions": {...}, "warnings": [...] }` or `{ "valid": false, "errors": [ { "path": "/processors/2/key", "code": "unknown_field" | "schema" | "unresolved_pointer" | "limit_out_of_range" | "missing_limits" | "input_not_allowed" | "schedule_requires_engine_clock" | "url_not_allowed" | "shape_mismatch" | "capability_missing" | "sleep_exceeds_timeout" | "duplicate_id" | "nesting_too_deep" | "too_many_steps", "message": "English sentence" } ] }`.
+`pipeline.validate` returns either `{ "valid": true, "permissions": {...}, "warnings": [...] }` or `{ "valid": false, "errors": [ { "path": "/processors/2/key", "code": "unknown_field" | "schema" | "unresolved_pointer" | "limit_out_of_range" | "missing_limits" | "input_not_allowed" | "schedule_requires_engine_clock" | "url_not_allowed" | "shape_mismatch" | "capability_missing" | "sleep_exceeds_timeout" | "duplicate_id" | "nesting_too_deep" | "too_many_steps" | "changes_message_ids", "message": "English sentence" } ] }`.
 
 Checks, in order: JSON Schema of the format version; component schemas; component ordering constraints (`parse_feed` needs a `/body` upstream; `host_llm.prompt` must point at a string-producing field; `collect` after `dedupe` is allowed, before is a warning "dedupe after collect sees one key per batch"); URL rules; pointer resolution against declared shapes; limits; components the host's `capabilities` rule out (`capability_missing`); a `host_llm` present with `llm_calls_per_run: 0` is an error. Warnings never block.
 

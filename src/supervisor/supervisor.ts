@@ -15,7 +15,7 @@ import type { Permissions } from "../pipeline/permissions.ts";
 import { startProxy, type ProxyOptions, type RunProxy } from "./proxy.ts";
 import { generateProfile, programPaths } from "./seatbelt.ts";
 import type { RunInit, RunOutcome } from "../executor/messages.ts";
-import { allSteps, stepById } from "../pipeline/tree.ts";
+import { allSteps, ancestorsOf, stepById } from "../pipeline/tree.ts";
 import type { ReportError, ReportLog, ReportStep, ReportWarning, RunReport, RunTrigger } from "../report.ts";
 
 export const CANCEL_GRACE_MS = 5000;
@@ -321,8 +321,9 @@ export class RunProcess {
     // the text of the prompt is taken, because a compromised one must not get more than a healthy one.
     const permitted = this.job.permissions.llm;
     const step = stepById(this.job.pipeline, params.step_id)?.config;
+    const iteration = step?.type === "host_llm" ? checkIteration(this.job.pipeline, params.step_id, params.iteration) : null;
     const prompt = params.messages?.[0]?.content;
-    if (!permitted || step?.type !== "host_llm" || typeof prompt !== "string" || typeof params.message_id !== "string") {
+    if (!permitted || step?.type !== "host_llm" || iteration === undefined || typeof prompt !== "string" || typeof params.message_id !== "string") {
       throw new RpcError("permission_denied", "This stream's permissions do not include that model call.");
     }
     const limit = Math.min(permitted.max_calls_per_run, this.env.ceilings.llm_calls_per_run);
@@ -333,7 +334,7 @@ export class RunProcess {
     this.llmCalls++;
     const release = await this.llmSlot();
     try {
-      return await this.sendLlm(params, step, prompt);
+      return await this.sendLlm(params, step, prompt, iteration);
     } finally {
       release();
     }
@@ -348,9 +349,10 @@ export class RunProcess {
     };
   }
 
-  private async sendLlm(params: any, step: any, prompt: string): Promise<unknown> {
+  private async sendLlm(params: any, step: any, prompt: string, iteration: string | null): Promise<unknown> {
     const started = Date.now();
-    const key = `${this.job.run_id}/${params.step_id}/${params.message_id}`;
+    // Inside a while, each iteration asks something new, so the key carries it.
+    const key = `${this.job.run_id}/${params.step_id}${iteration === null ? "" : `@${iteration}`}/${params.message_id}`;
     const request = (attempt: number) => ({
       run_id: this.job.run_id,
       stream_id: this.job.stream_id,
@@ -504,6 +506,17 @@ export class RunProcess {
       ...(status === "succeeded" && this.results.length === 0 && this.warnings.length === 0 && this.job.pipeline.output.type === "host_result" ? { nothing_new: true } : {}),
     };
   }
+}
+
+// The loop iterations a run process claims for a host_llm: one per enclosing while, outermost first,
+// each within that while's max_loops. Null outside loops; undefined when the claim does not fit.
+function checkIteration(pipeline: any, stepId: string, claimed: unknown): string | null | undefined {
+  const loops = ancestorsOf(pipeline, stepId).filter((c) => c.type === "while");
+  if (loops.length === 0) return claimed === undefined ? null : undefined;
+  if (typeof claimed !== "string" || !/^[1-9][0-9]*(\.[1-9][0-9]*)*$/.test(claimed)) return undefined;
+  const parts = claimed.split(".").map(Number);
+  if (parts.length !== loops.length || parts.some((n, i) => n > loops[i].max_loops)) return undefined;
+  return claimed;
 }
 
 function bounded(value: unknown): string {
