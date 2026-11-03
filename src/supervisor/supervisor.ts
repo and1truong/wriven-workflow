@@ -9,6 +9,9 @@ import { ENGINE_VERSION, PIPELINE_FORMAT, REPORT_VERSION } from "../version.ts";
 import { parseDuration } from "../pipeline/duration.ts";
 import { mkdirSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { randomBytes } from "node:crypto";
+import type { Permissions } from "../pipeline/permissions.ts";
+import { startProxy, type ProxyOptions, type RunProxy } from "./proxy.ts";
 import { generateProfile, programPaths } from "./seatbelt.ts";
 import type { RunInit, RunOutcome } from "../executor/messages.ts";
 import type { ReportError, ReportStep, ReportWarning, RunReport, RunTrigger } from "../report.ts";
@@ -23,6 +26,8 @@ export interface RunJob {
   stream_name: string;
   pipeline: any;
   permissions_hash: string;
+  // The pinned object: the only source of the proxy allowlist.
+  permissions: Permissions;
   trigger: RunTrigger;
   scheduled_for: string | null;
   queued_at: string;
@@ -50,7 +55,7 @@ export interface SupervisorEnv {
   // How often RSS is sampled. A fast spike can pass the limit briefly before the kill (threat model T9).
   memorySampleMs?: number;
   // Lets tests shorten what the format's minimums would make slow, and exercise the watchdog.
-  test?: { runTimeoutMs?: number; hook?: RunInit["test_hook"] };
+  test?: { runTimeoutMs?: number; hook?: RunInit["test_hook"]; dial?: ProxyOptions["dial"] };
   onStarted(job: RunJob, startedAt: string): void;
   // Replaces the requests the fake world answers in `pipeline.test`.
   hostHandlers?: {
@@ -82,6 +87,12 @@ export class RunProcess {
   private tempDir = "";
   private sandboxFailure: string | null = null;
   private exited = false;
+  private proxy: RunProxy | null = null;
+  private proxyToken = "";
+  private networkRequests = 0;
+  private networkBytes = 0;
+  private readonly networkHosts = new Set<string>();
+  private readonly networkDenied = new Set<string>();
 
   constructor(
     readonly job: RunJob,
@@ -107,6 +118,7 @@ export class RunProcess {
     clearTimeout(this.timeoutTimer);
     if (this.killTimer) clearTimeout(this.killTimer);
     await this.waitForExit();
+    this.proxy?.stop();
     rmSync(this.tempDir, { recursive: true, force: true });
     return this.report(outcome, failure);
   }
@@ -131,13 +143,18 @@ export class RunProcess {
 
   private init(): RunInit {
     const { run_id, stream_id, pipeline, trigger, scheduled_for, clock, input_override } = this.job;
-    return { run_id, stream_id, pipeline, trigger, scheduled_for, clock, input_override, ...(this.env.test?.hook ? { test_hook: this.env.test.hook } : {}) };
+    const proxy = this.proxy ? { port: this.proxy.port, token: this.proxyToken } : null;
+    return { run_id, stream_id, pipeline, trigger, scheduled_for, clock, input_override, proxy, ...(this.env.test?.hook ? { test_hook: this.env.test.hook } : {}) };
   }
 
   private spawn(): void {
     this.tempDir = join(this.env.tempRoot, this.job.run_id);
     mkdirSync(this.tempDir, { recursive: true, mode: 0o700 });
     this.tempDir = realpathSync(this.tempDir);
+    if (this.job.permissions.network.length > 0) {
+      this.proxyToken = randomBytes(24).toString("hex");
+      this.proxy = startProxy({ allowedHosts: this.job.permissions.network.map((n) => n.host), token: this.proxyToken, dial: this.env.test?.dial });
+    }
     const command = [realpathSync(this.env.command[0]!), ...this.env.command.slice(1), "--run"];
     this.process = Bun.spawn(this.env.sandboxExec ? [this.env.sandboxExec, "-p", this.profile(), ...command] : command, {
       stdin: "pipe",
@@ -171,7 +188,7 @@ export class RunProcess {
       programPaths: programPaths(this.env.command),
       tempDir: this.tempDir,
       stateFiles: dir ? [join(dir, "state.json"), join(dir, "state.json.tmp")] : [],
-      proxyPort: null,
+      proxyPort: this.proxy?.port ?? null,
     });
   }
 
@@ -216,6 +233,11 @@ export class RunProcess {
     if (method === "step.started") this.currentStep = String(params.step_id);
     else if (method === "step.finished") this.steps.push(params as ReportStep);
     else if (method === "warning") this.warnings.push(params as ReportWarning);
+    else if (method === "network") {
+      this.networkRequests++;
+      this.networkBytes += params.bytes as number;
+      this.networkHosts.add(String(params.host));
+    } else if (method === "denied") this.networkDenied.add(String(params.host));
   }
 
   private onChildRequest(method: string, params: any): Promise<unknown> {
@@ -355,7 +377,12 @@ export class RunProcess {
       warnings: this.warnings,
       steps: this.steps,
       llm: { calls: this.llmCalls, input_tokens: this.inputTokens, output_tokens: this.outputTokens, cost_usd: this.cost, requests: this.llmRequests },
-      network: { requests: 0, bytes: 0, hosts: [], denied: [] },
+      network: {
+        requests: this.networkRequests,
+        bytes: this.networkBytes,
+        hosts: [...new Set([...this.networkHosts, ...(this.proxy?.hosts ?? [])])].sort(),
+        denied: [...new Set([...this.networkDenied, ...(this.proxy?.denied ?? [])])].sort(),
+      },
       results: this.results,
       state: outcome?.state ?? { committed: false, dedupe_keys: 0 },
       sandbox: this.env.sandboxExec ? "seatbelt" : "none",

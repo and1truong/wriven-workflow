@@ -4,6 +4,7 @@
 import { RpcError } from "../protocol/errors.ts";
 import { readLines, StdoutWriter } from "../protocol/lines.ts";
 import { Peer } from "../protocol/peer.ts";
+import { proxyFetcher } from "../components/http-fetch.ts";
 import { execute } from "./executor.ts";
 import type { RunInit } from "./messages.ts";
 
@@ -21,7 +22,11 @@ export async function runMain(): Promise<void> {
       const hook = (params as RunInit).test_hook;
       const held = hook?.allocate_mb ? Array.from({ length: hook.allocate_mb }, () => Buffer.alloc(1024 * 1024, 1)) : [];
       void held;
-      const outcome = await execute(params as RunInit, {
+      const init = params as RunInit;
+      const outcome = await execute(init, {
+        fetcher: init.proxy ? proxyFetcher(init.proxy, init.test_hook?.tls_ca) : null,
+        network: (host, bytes) => peer.notify("network", { host, bytes }),
+        denied: (host) => peer.notify("denied", { host }),
         signal: cancel.signal,
         llm: (request) => peer.request("host.llm", request).promise,
         result: (request) => peer.request("host.result", request).promise,

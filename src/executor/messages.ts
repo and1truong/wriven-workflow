@@ -16,8 +16,9 @@ export interface RunInit {
   // The instant the run believes is "now" at its start, when a clock is injected.
   clock: string | null;
   input_override: Message[] | null;
+  proxy: { port: number; token: string } | null;
   // Set only by tests in this repository, through the supervisor; no RPC reaches it.
-  test_hook?: { allocate_mb?: number };
+  test_hook?: { allocate_mb?: number; bypass_allowlist_check?: boolean; tls_ca?: string };
 }
 
 export interface RunOutcome {

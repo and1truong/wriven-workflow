@@ -37,6 +37,8 @@ A run process holds at most one batch in flight between any two processors: a pr
 
 **`on_error: skip` is the one relaxation**, available only on `http_fetch` and `parse_feed`. With it, the failing message is dropped (acknowledged as deliberate), a warning `{ "step": id, "message_id", "code", "message" }` is appended to the run report, and the run continues. If skipping leaves a batch empty, downstream components see an empty batch; `collect` with `min_items: 1` then drops it and the run succeeds with a report that says "nothing to summarize" and lists the warnings. The permissions rendering includes "Skips a source that cannot be fetched or read that day." so the person knows silence can mean "all three feeds failed".
 
+With `on_error: skip`, a host outside the allowlist on a redirect is skipped like any other failure, and the attempted host stays in `network.denied` in the report. Cancellation is never skipped.
+
 **`host_llm` errors are never skipped and never retried by the engine.** The host's typed error (credentials, quota, rate limit, provider unavailable, budget) becomes the run's error. If the host says `retry_after`, the report carries it so the host can show "try again after 14:00"; the engine does not act on it.
 
 **Output errors fail the run** unless the output has `retry` configured (only `host_result` has it in v0, and only because the host may be momentarily busy writing: `retry: { "max_attempts": 3, "backoff": "2s" }`). With retry, the same message is re-sent with the same idempotency key, so the host deduplicates.

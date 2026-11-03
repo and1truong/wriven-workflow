@@ -1,9 +1,10 @@
 // The registry of components v0 knows about.
 
 import { findPlaceholders } from "../pipeline/pointer.ts";
-import { object, shapeWith, STRING, UNKNOWN } from "../pipeline/shape.ts";
+import { NUMBER, object, shapeWith, STRING, UNKNOWN } from "../pipeline/shape.ts";
+import { hostOfUrl, urlProblem } from "../pipeline/urls.ts";
 import { POINTER_PATTERN } from "../pipeline/pointer.ts";
-import { DURATION_PATTERN } from "../pipeline/duration.ts";
+import { DURATION_PATTERN, parseDuration } from "../pipeline/duration.ts";
 import type { ComponentDef } from "./types.ts";
 
 const pointer = { type: "string", pattern: POINTER_PATTERN, patternMessage: "This must be a JSON Pointer such as /summary." };
@@ -51,6 +52,46 @@ const inject: ComponentDef = {
   outputShape: () => UNKNOWN,
   permissions: (_config, draft) => {
     draft.runs = { kind: "host" };
+  },
+};
+
+const httpFetch: ComponentDef = {
+  type: "http_fetch",
+  kind: "processor",
+  summary: "Fetch pages over HTTPS from listed hosts, one message per URL.",
+  properties: {
+    urls: { type: "array", minItems: 1, maxItems: 20, items: { type: "string" } },
+    headers: {
+      type: "object",
+      additionalProperties: false,
+      properties: { accept: { type: "string" }, "accept-language": { type: "string" }, "user-agent": { type: "string" } },
+    },
+    timeout: { type: "string", pattern: DURATION_PATTERN },
+    max_bytes: { type: "integer", minimum: 1, maximum: 5 * 1024 * 1024 },
+    on_error: { enum: ["fail", "skip"] },
+    retry: retrySchema,
+  },
+  required: ["urls"],
+  check(config, _shape, ctx) {
+    (config.urls as string[]).forEach((url, i) => {
+      const problem = urlProblem(url);
+      if (problem) ctx.error("url_not_allowed", `urls/${i}`, problem);
+    });
+    if (config.timeout !== undefined && parseDuration(config.timeout) > 120_000) {
+      ctx.error("schema", "timeout", "timeout may be at most 120s.");
+    }
+  },
+  outputShape: () => object({ url: STRING, status: NUMBER, headers: UNKNOWN, body: STRING, content_type: STRING }),
+  permissions(config, draft) {
+    draft.fetched = true;
+    for (const url of config.urls as string[]) {
+      const host = hostOfUrl(url);
+      if (!draft.network.some((n) => n.host === host)) draft.network.push({ host, scheme: "https", methods: ["GET"] });
+    }
+    if (config.retry) {
+      draft.network_retry = { max_attempts: Math.max(draft.network_retry?.max_attempts ?? 0, config.retry.max_attempts) };
+    }
+    if (config.on_error === "skip") draft.skips_failed_sources = true;
   },
 };
 
@@ -140,7 +181,7 @@ const drop: ComponentDef = {
   },
 };
 
-export const COMPONENTS: ComponentDef[] = [hostTrigger, inject, template, hostLlm, hostResult, drop];
+export const COMPONENTS: ComponentDef[] = [hostTrigger, inject, httpFetch, template, hostLlm, hostResult, drop];
 
 export const COMPONENT_BY_TYPE = new Map(COMPONENTS.map((c) => [c.type, c]));
 

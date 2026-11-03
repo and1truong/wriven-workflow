@@ -43,6 +43,7 @@ export class RunQueue {
       stream_name: manifest.name,
       pipeline: manifest.pipeline,
       permissions_hash: manifest.permissions_hash,
+      permissions: manifest.permissions,
       trigger: options.trigger,
       scheduled_for: options.scheduled_for,
       queued_at: this.env.now().toISOString(),

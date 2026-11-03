@@ -1,6 +1,7 @@
 // Runs one pipeline once: input → processors → output, one acknowledgement per batch. In v0 every
 // input emits one batch, so "the batch was acknowledged" and "the run succeeded" are the same event.
 
+import type { Fetcher } from "../components/http-fetch.ts";
 import { deliver, processorFor, type StepContext } from "../components/runtime.ts";
 import { RpcError } from "../protocol/errors.ts";
 import { StepError, type Message, type RunInit, type RunOutcome } from "./messages.ts";
@@ -10,6 +11,9 @@ export interface ExecutorWorld {
   llm: StepContext["llm"];
   result: StepContext["result"];
   warn(warning: { step_id: string; message_id: string | null; code: string; message: string }): void;
+  fetcher: Fetcher | null;
+  network(host: string, bytes: number): void;
+  denied(host: string): void;
   stepStarted(stepId: string): void;
   stepFinished(step: { step_id: string; in: number; out: number; dropped: number; duration_ms: number }): void;
 }
@@ -36,6 +40,10 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
     warn: (messageId, code, message) => world.warn({ step_id: id, message_id: messageId, code, message }),
     llm: world.llm,
     result: world.result,
+    fetcher: world.fetcher,
+    network: world.network,
+    denied: world.denied,
+    bypassAllowlistCheck: init.test_hook?.bypass_allowlist_check === true,
   });
   const noState = { committed: false, dedupe_keys: 0 };
   try {

@@ -4,6 +4,7 @@ import { findPlaceholders, pointerGet, pointerSet } from "../pipeline/pointer.ts
 import { parseDuration } from "../pipeline/duration.ts";
 import { RpcError } from "../protocol/errors.ts";
 import { StepError, type Message } from "../executor/messages.ts";
+import { httpFetch, type Fetcher } from "./http-fetch.ts";
 
 export interface StepContext {
   runId: string;
@@ -11,6 +12,13 @@ export interface StepContext {
   signal: AbortSignal;
   now(): Date;
   warn(messageId: string | null, code: string, message: string): void;
+  fetcher: Fetcher | null;
+  // Counts one finished HTTP response; the report's numbers come from here.
+  network(host: string, bytes: number): void;
+  // Records a host the run tried and was refused.
+  denied(host: string): void;
+  // Tests only: lets a request reach the proxy so its refusal can be observed.
+  bypassAllowlistCheck: boolean;
   llm(request: { step_id: string; message_id: string; system?: string; messages: Array<{ role: "user"; content: string }>; max_output_tokens?: number }): Promise<any>;
   result(request: { message_id: string; result: { title: string; body: string; format: string } }): Promise<any>;
 }
@@ -79,7 +87,7 @@ const hostLlm: Processor = async (config, batch, ctx) => {
   return batch;
 };
 
-const PROCESSORS: Record<string, Processor> = { template, host_llm: hostLlm };
+const PROCESSORS: Record<string, Processor> = { http_fetch: httpFetch, template, host_llm: hostLlm };
 
 export function processorFor(type: string): Processor {
   const processor = PROCESSORS[type];
