@@ -95,6 +95,63 @@ const httpFetch: ComponentDef = {
   },
 };
 
+const parseFeed: ComponentDef = {
+  type: "parse_feed",
+  kind: "processor",
+  summary: "Read /body as RSS or Atom and emit one message per entry, with HTML turned into plain text.",
+  properties: {
+    max_entries: { type: "integer", minimum: 1, maximum: 500 },
+    on_error: { enum: ["fail", "skip"] },
+  },
+  check(_config, shape, ctx) {
+    ctx.requireString("type", "/body", shape);
+  },
+  outputShape: () =>
+    object({ id: STRING, title: STRING, link: STRING, published: UNKNOWN, summary: STRING, content: STRING, author: STRING, feed: object({ title: STRING, url: STRING }) }),
+  permissions(config, draft) {
+    if (config.on_error === "skip") draft.skips_failed_sources = true;
+  },
+};
+
+const DEFAULT_REMEMBER = "30d";
+const DEFAULT_MAX_KEYS = 10_000;
+
+const dedupe: ComponentDef = {
+  type: "dedupe",
+  kind: "processor",
+  summary: "Drop messages whose key was seen in an earlier successful run of this stream.",
+  properties: {
+    key: pointer,
+    remember: { type: "string", pattern: DURATION_PATTERN },
+    max_keys: { type: "integer", minimum: 1, maximum: 100_000 },
+  },
+  required: ["key"],
+  check(config, shape, ctx) {
+    ctx.requirePointer("key", config.key, shape);
+    if (config.remember !== undefined && parseDuration(config.remember) > parseDuration("365d")) {
+      ctx.error("schema", "remember", "remember may be at most 365d.");
+    }
+  },
+  permissions(config, draft) {
+    const remember = config.remember ?? DEFAULT_REMEMBER;
+    const maxKeys = config.max_keys ?? DEFAULT_MAX_KEYS;
+    // Several dedupe steps state the widest: the sentence is what the person relies on.
+    const longer = draft.state && parseDuration(draft.state.remember) > parseDuration(remember) ? draft.state.remember : remember;
+    draft.state = { kind: "dedupe", remember: longer, max_keys: Math.max(draft.state?.max_keys ?? 0, maxKeys) };
+  },
+};
+
+const collect: ComponentDef = {
+  type: "collect",
+  kind: "processor",
+  summary: "Turn the current batch into one message: { items, count }.",
+  properties: {
+    min_items: { type: "integer", minimum: 0 },
+    max_items: { type: "integer", minimum: 1, maximum: 1000 },
+  },
+  outputShape: (_config, shape) => object({ items: { kind: "array", items: shape }, count: NUMBER }),
+};
+
 const template: ComponentDef = {
   type: "template",
   kind: "processor",
@@ -181,7 +238,9 @@ const drop: ComponentDef = {
   },
 };
 
-export const COMPONENTS: ComponentDef[] = [hostTrigger, inject, httpFetch, template, hostLlm, hostResult, drop];
+export const DEDUPE_DEFAULTS = { remember: DEFAULT_REMEMBER, max_keys: DEFAULT_MAX_KEYS };
+
+export const COMPONENTS: ComponentDef[] = [hostTrigger, inject, httpFetch, parseFeed, dedupe, collect, template, hostLlm, hostResult, drop];
 
 export const COMPONENT_BY_TYPE = new Map(COMPONENTS.map((c) => [c.type, c]));
 

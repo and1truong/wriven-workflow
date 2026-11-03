@@ -90,7 +90,8 @@ A cancelled run commits no state and is not retried. The host decides whether to
 2. **Idempotency keys on both host-facing requests.** The only way to make "at-least-once transport" and "never pay twice" both true. The host side is small: a map from key to stored reply/result for the run's lifetime.
 3. **Commit state on success only.** Correctness over cost, with the cost bounded by `runs_per_day`.
 4. **No cross-run redelivery.** A failed run stays failed (Wriven scheduled-actions decision 5: "Lần hỏng không chạy lại, đợi mốc kế tiếp"). The next scheduled occurrence is the retry, and the person sees both.
-5. **Sequential `host.llm` calls per run.** Makes the cap check trivial and keeps the host's provider load predictable. Parallel calls are a later knob.
+5. **No `succeeded_empty` status; an optional `nothing_new: true` on `succeeded` instead.** Decided in engine-06. A host needs to say "nothing new today" without parsing warnings, but a run that found nothing did succeed, and every host switch over `status` would otherwise need another case for what is the same outcome. `nothing_new` is set when the run succeeded, delivered no result and has no warnings, so "all three feeds failed and were skipped" does not read as "nothing new": there the host sees the warnings instead.
+6. **Sequential `host.llm` calls per run.** Makes the cap check trivial and keeps the host's provider load predictable. Parallel calls are a later knob.
 
 ## Risks
 
@@ -105,7 +106,3 @@ A cancelled run commits no state and is not retried. The host decides whether to
 - A run cancelled during `host_llm` sends `$/cancel` with the matching request id, finishes with `cancelled`, and leaves `state.json` unchanged.
 - Closing the engine's stdin during a run yields `run.finished` with `cancelled` on stdout and exit code 0 within the shutdown timeout plus 1 second.
 - A `host_result` with `retry` and a fake host that fails the first write produces exactly one result with the same idempotency key in both attempts.
-
-## Open points
-
-- Whether `collect` should surface "dropped because below `min_items`" as a report status of its own (`succeeded_empty`) so the host can render "nothing new today" without parsing warnings. Leaning yes; decide in ticket 06.

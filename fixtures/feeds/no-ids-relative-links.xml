@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<rss version="2.0">
+<channel>
+  <title>Hand written</title>
+  <item><title>Has a relative link</title><link>/posts/1</link><pubDate>not a date</pubDate></item>
+  <item><title>Has neither guid nor link</title><pubDate>Sat, 31 Oct 2026 00:00:00 +0000</pubDate><description>Text with a bare &lt; sign and &amp;amp; double encoding &nbsp;&hellip;</description></item>
+  <item><title>Script link</title><link>javascript:alert(1)</link></item>
+</channel>
+</rss>

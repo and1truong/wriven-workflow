@@ -1,0 +1,60 @@
+{
+  "format": "wriven-workflow/pipeline@1",
+  "name": "Morning feed digest",
+  "description": "Summarize new posts from three feeds every weekday morning.",
+  "input": {
+    "type": "host_trigger"
+  },
+  "processors": [
+    {
+      "id": "fetch",
+      "type": "http_fetch",
+      "urls": [
+        "https://example.com/feed.xml",
+        "https://blog.example.org/rss",
+        "https://news.example.net/atom.xml"
+      ],
+      "on_error": "skip"
+    },
+    {
+      "id": "parse",
+      "type": "parse_feed",
+      "on_eror": "skip"
+    },
+    {
+      "id": "new_only",
+      "type": "dedupe",
+      "key": "/id",
+      "remember": "90d"
+    },
+    {
+      "id": "gather",
+      "type": "collect",
+      "min_items": 1,
+      "max_items": 50
+    },
+    {
+      "id": "prompt",
+      "type": "template",
+      "target": "/prompt",
+      "text": "Summarize these posts for a busy reader. Group by theme, keep links.\n\n{{/items}}"
+    },
+    {
+      "id": "summarize",
+      "type": "host_llm",
+      "prompt": "/prompt",
+      "target": "/summary"
+    }
+  ],
+  "output": {
+    "type": "host_result",
+    "title": "Morning digest",
+    "body": "/summary",
+    "format": "markdown"
+  },
+  "limits": {
+    "llm_calls_per_run": 1,
+    "runs_per_day": 2,
+    "run_timeout": "5m"
+  }
+}

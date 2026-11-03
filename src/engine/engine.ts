@@ -152,6 +152,7 @@ export class Engine {
       streamDir: (streamId) => this.streams.dir(streamId),
       memoryLimitMb: ceilings.run_memory_mb,
       memorySampleMs: this.options.test?.memorySampleMs,
+      injectClock: this.options.now !== undefined,
       test: this.options.test,
       onStarted: (job, startedAt) => {
         this.peer.notify("run.started", { run_id: job.run_id, stream_id: job.stream_id, trigger: job.trigger, scheduled_for: job.scheduled_for, started_at: startedAt });

@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<!DOCTYPE rss [
+  <!ENTITY lol "lollollollollol">
+  <!ENTITY lol2 "&lol;&lol;&lol;&lol;&lol;">
+  <!ENTITY xxe SYSTEM "file:///etc/passwd">
+]>
+<rss version="2.0"><channel><title>Entities &lol2;</title><item><title>Not expanded &xxe;</title><guid>e1</guid></item></channel></rss>

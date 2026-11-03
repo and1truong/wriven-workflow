@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<rss version="2.0"><channel><title>Café du Monde</title><link>https://example.com</link>
+<item><title>Déjà vu</title><link>https://example.com/deja</link><description>Une entrée</description><pubDate>Sun, 01 Nov 2026 10:00:00 +0100</pubDate></item>
+</channel></rss>

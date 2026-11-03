@@ -47,7 +47,7 @@ export class RunQueue {
       trigger: options.trigger,
       scheduled_for: options.scheduled_for,
       queued_at: this.env.now().toISOString(),
-      clock: null,
+      clock: this.env.injectClock ? this.env.now().toISOString() : null,
       input_override: null,
     };
     this.waiting.push({ job, collapsible: options.collapsible });

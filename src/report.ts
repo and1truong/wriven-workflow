@@ -58,6 +58,7 @@ export interface RunReport {
   sandbox: "seatbelt" | "none";
   engine_version: string;
   cancelled_at_step?: string | null;
+  nothing_new?: boolean;
 }
 
 const time = { type: "string" };

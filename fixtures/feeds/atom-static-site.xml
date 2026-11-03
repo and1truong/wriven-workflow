@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en">
+  <title type="text">News from Example</title>
+  <subtitle>Things that happened</subtitle>
+  <link href="https://news.example.net/atom.xml" rel="self"/>
+  <link href="https://news.example.net/"/>
+  <updated>2026-11-02T10:00:00+10:00</updated>
+  <id>urn:uuid:60a76c80-d399-11d9-b93C-0003939e0af6</id>
+  <author><name>The Editors</name></author>
+  <entry>
+    <title>First &amp; foremost</title>
+    <link href="/posts/first/" rel="alternate" type="text/html"/>
+    <link href="/posts/first/edit" rel="edit"/>
+    <id>urn:uuid:1225c695-cfb8-4ebb-aaaa-80da344efa6a</id>
+    <published>2026-11-02T09:30:00+10:00</published>
+    <updated>2026-11-02T09:45:00+10:00</updated>
+    <summary type="html">&lt;p&gt;A &lt;em&gt;short&lt;/em&gt; summary.&lt;/p&gt;</summary>
+    <content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml"><p>The <b>whole</b> story.</p><p>Second paragraph.</p></div></content>
+  </entry>
+  <entry>
+    <title type="html">Second &lt;i&gt;thing&lt;/i&gt;</title>
+    <link href="https://news.example.net/posts/second/"/>
+    <id>tag:news.example.net,2026:second</id>
+    <updated>2026-11-01T12:00:00Z</updated>
+    <author><name>Alex Kim</name></author>
+    <content type="html"><![CDATA[<p>Body with a <a href="https://example.com">link</a>.</p>]]></content>
+  </entry>
+</feed>

@@ -1,6 +1,8 @@
 // The private protocol between the engine and a run process, and the unit that travels through a
 // pipeline. Both ends are this binary, so nothing here is a compatibility promise.
 
+import type { StateFile } from "./run-state.ts";
+
 export interface Message {
   id: string;
   data: any;
@@ -17,6 +19,9 @@ export interface RunInit {
   clock: string | null;
   input_override: Message[] | null;
   proxy: { port: number; token: string } | null;
+  // Where the stream's state lives; null when nothing may be written (tests).
+  state_path: string | null;
+  initial_state: StateFile | null;
   // Set only by tests in this repository, through the supervisor; no RPC reaches it.
   test_hook?: { allocate_mb?: number; bypass_allowlist_check?: boolean; tls_ca?: string };
 }

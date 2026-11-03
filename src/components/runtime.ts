@@ -5,6 +5,9 @@ import { parseDuration } from "../pipeline/duration.ts";
 import { RpcError } from "../protocol/errors.ts";
 import { StepError, type Message } from "../executor/messages.ts";
 import { httpFetch, type Fetcher } from "./http-fetch.ts";
+import { parseFeed } from "./parse-feed.ts";
+import { DEDUPE_DEFAULTS } from "./definitions.ts";
+import type { RunState } from "../executor/run-state.ts";
 
 export interface StepContext {
   runId: string;
@@ -19,6 +22,9 @@ export interface StepContext {
   denied(host: string): void;
   // Tests only: lets a request reach the proxy so its refusal can be observed.
   bypassAllowlistCheck: boolean;
+  state: RunState;
+  // Tells the run that state changed, so a successful run writes it.
+  stateTouched(): void;
   llm(request: { step_id: string; message_id: string; system?: string; messages: Array<{ role: "user"; content: string }>; max_output_tokens?: number }): Promise<any>;
   result(request: { message_id: string; result: { title: string; body: string; format: string } }): Promise<any>;
 }
@@ -87,7 +93,31 @@ const hostLlm: Processor = async (config, batch, ctx) => {
   return batch;
 };
 
-const PROCESSORS: Record<string, Processor> = { http_fetch: httpFetch, template, host_llm: hostLlm };
+const dedupe: Processor = async (config, batch, ctx) => {
+  const remember = parseDuration(config.remember ?? DEDUPE_DEFAULTS.remember);
+  const now = ctx.now();
+  const kept = batch.filter((message) => {
+    const found = pointerGet(message.data, config.key);
+    if (!found.found) throw new StepError("unresolved_pointer", `${config.key} does not exist in message ${message.id}.`, { message_id: message.id });
+    const key = typeof found.value === "string" ? found.value : JSON.stringify(found.value);
+    return ctx.state.admit(ctx.stepId, key, now, remember);
+  });
+  ctx.state.trim(ctx.stepId, now, remember, config.max_keys ?? DEDUPE_DEFAULTS.max_keys);
+  ctx.stateTouched();
+  return kept;
+};
+
+const collect: Processor = async (config, batch, ctx) => {
+  const min = config.min_items ?? 1;
+  const max = config.max_items ?? 100;
+  if (batch.length < min) return [];
+  const first = batch[0];
+  if (batch.length > max) ctx.warn(first?.id ?? null, "collect_truncated", `${batch.length} items arrived; only the first ${max} were kept.`);
+  const kept = batch.slice(0, max);
+  return [{ id: `${first?.id ?? ctx.stepId}.c`, data: { items: kept.map((m) => m.data), count: kept.length }, meta: { ...first?.meta } }];
+};
+
+const PROCESSORS: Record<string, Processor> = { http_fetch: httpFetch, parse_feed: parseFeed, dedupe, collect, template, host_llm: hostLlm };
 
 export function processorFor(type: string): Processor {
   const processor = PROCESSORS[type];

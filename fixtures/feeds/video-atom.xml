@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+ <link rel="self" href="http://www.example.com/feeds/videos.xml?channel_id=abc"/>
+ <id>yt:channel:abc</id>
+ <title>A Channel</title>
+ <author><name>A Channel</name><uri>https://www.example.com/channel/abc</uri></author>
+ <published>2020-01-01T00:00:00+00:00</published>
+ <entry>
+  <id>yt:video:xyz</id>
+  <yt:videoId>xyz</yt:videoId>
+  <title>A video title</title>
+  <link rel="alternate" href="https://www.example.com/watch?v=xyz"/>
+  <author><name>A Channel</name></author>
+  <published>2026-11-01T00:00:00+00:00</published>
+  <media:group><media:title>A video title</media:title><media:description>Description in media group</media:description></media:group>
+ </entry>
+</feed>

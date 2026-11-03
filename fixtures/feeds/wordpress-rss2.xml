@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"
+	xmlns:content="http://purl.org/rss/1.0/modules/content/"
+	xmlns:wfw="http://wellformedweb.org/CommentAPI/"
+	xmlns:dc="http://purl.org/dc/elements/1.1/"
+	xmlns:atom="http://www.w3.org/2005/Atom"
+	xmlns:sy="http://purl.org/rss/1.0/modules/syndication/"
+	xmlns:slash="http://purl.org/rss/1.0/modules/slash/">
+<channel>
+	<title>A Small Blog &#8211; Notes</title>
+	<atom:link href="https://blog.example.org/feed/" rel="self" type="application/rss+xml" />
+	<link>https://blog.example.org</link>
+	<description>Just another blog</description>
+	<lastBuildDate>Mon, 02 Nov 2026 21:14:05 +0000</lastBuildDate>
+	<language>en-US</language>
+	<sy:updatePeriod>hourly</sy:updatePeriod>
+	<generator>https://wordpress.org/?v=6.8</generator>
+	<item>
+		<title>Why we moved to &#8220;boring&#8221; tech</title>
+		<link>https://blog.example.org/2026/11/boring-tech/</link>
+		<comments>https://blog.example.org/2026/11/boring-tech/#respond</comments>
+		<dc:creator><![CDATA[Sam Lee]]></dc:creator>
+		<pubDate>Mon, 02 Nov 2026 21:14:05 +0000</pubDate>
+		<category><![CDATA[Engineering]]></category>
+		<guid isPermaLink="false">https://blog.example.org/?p=1042</guid>
+		<description><![CDATA[<p>We replaced three services with one. Here is what happened&#8230;</p>
+<p>The post <a href="https://blog.example.org/2026/11/boring-tech/">Why we moved</a> appeared first on A Small Blog.</p>]]></description>
+		<content:encoded><![CDATA[<p>We replaced <strong>three</strong> services with one.</p>
+<script>alert("tracker")</script>
+<style>.x{color:red}</style>
+<p>Latency fell &amp; so did the bill.</p>]]></content:encoded>
+	</item>
+	<item>
+		<title>Release notes 4.2</title>
+		<link>https://blog.example.org/2026/10/release-4-2/</link>
+		<dc:creator><![CDATA[Sam Lee]]></dc:creator>
+		<pubDate>Fri, 30 Oct 2026 08:00:00 +0000</pubDate>
+		<guid isPermaLink="false">https://blog.example.org/?p=1039</guid>
+		<description><![CDATA[Small fixes.]]></description>
+	</item>
+</channel>
+</rss>

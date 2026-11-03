@@ -5,6 +5,7 @@ import type { Fetcher } from "../components/http-fetch.ts";
 import { deliver, processorFor, type StepContext } from "../components/runtime.ts";
 import { RpcError } from "../protocol/errors.ts";
 import { StepError, type Message, type RunInit, type RunOutcome } from "./messages.ts";
+import { RunState } from "./run-state.ts";
 
 export interface ExecutorWorld {
   signal: AbortSignal;
@@ -32,11 +33,17 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
   const clockStart = init.clock ? Date.parse(init.clock) : null;
   const now = () => new Date(clockStart === null ? Date.now() : clockStart + (Date.now() - startedAt));
   let stepId = "input";
+  let state: RunState;
+  let touched = false;
   const context = (id: string): StepContext => ({
     runId: init.run_id,
     stepId: id,
     signal: world.signal,
     now,
+    state,
+    stateTouched: () => {
+      touched = true;
+    },
     warn: (messageId, code, message) => world.warn({ step_id: id, message_id: messageId, code, message }),
     llm: world.llm,
     result: world.result,
@@ -47,6 +54,7 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
   });
   const noState = { committed: false, dedupe_keys: 0 };
   try {
+    state = new RunState(init.state_path, init.initial_state);
     let batch = inputMessages(init);
     world.stepFinished({ step_id: "input", in: 0, out: batch.length, dropped: 0, duration_ms: 0 });
     for (const config of init.pipeline.processors) {
@@ -64,7 +72,10 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
     const started = Date.now();
     await deliver(init.pipeline.output, batch, context(stepId));
     world.stepFinished({ step_id: stepId, in: batch.length, out: batch.length, dropped: 0, duration_ms: Date.now() - started });
-    return { status: "succeeded", error: null, state: noState };
+    // Before the final report, so a host that sees "succeeded" knows the keys are on disk.
+    stepId = "state";
+    const committed = state.commit(touched);
+    return { status: "succeeded", error: null, state: { committed, dedupe_keys: state.keyCount } };
   } catch (err) {
     return { status: cancelledBy(err, world.signal) ? "cancelled" : "failed", error: describe(err, stepId), state: noState };
   }

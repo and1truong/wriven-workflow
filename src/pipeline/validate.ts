@@ -85,6 +85,12 @@ export function validatePipeline(document: unknown, ctx: ValidationContext): Val
   }
   if (errors.length > 0) return failed();
 
+  const types: string[] = pipeline.processors.map((p: any) => p.type);
+  const dedupeAt = types.lastIndexOf("dedupe");
+  if (dedupeAt > types.indexOf("collect") && types.includes("collect")) {
+    warnings.push({ path: `/processors/${dedupeAt}/type`, code: "dedupe_after_collect", message: "dedupe after collect sees one key per batch." });
+  }
+
   const permissions = derivePermissions(pipeline);
   return {
     valid: true,

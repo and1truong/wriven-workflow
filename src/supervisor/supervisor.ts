@@ -54,6 +54,8 @@ export interface SupervisorEnv {
   memoryLimitMb: number;
   // How often RSS is sampled. A fast spike can pass the limit briefly before the kill (threat model T9).
   memorySampleMs?: number;
+  // True when the engine runs on an injected clock, which the run process must share.
+  injectClock: boolean;
   // Lets tests shorten what the format's minimums would make slow, and exercise the watchdog.
   test?: { runTimeoutMs?: number; hook?: RunInit["test_hook"]; dial?: ProxyOptions["dial"] };
   onStarted(job: RunJob, startedAt: string): void;
@@ -144,7 +146,8 @@ export class RunProcess {
   private init(): RunInit {
     const { run_id, stream_id, pipeline, trigger, scheduled_for, clock, input_override } = this.job;
     const proxy = this.proxy ? { port: this.proxy.port, token: this.proxyToken } : null;
-    return { run_id, stream_id, pipeline, trigger, scheduled_for, clock, input_override, proxy, ...(this.env.test?.hook ? { test_hook: this.env.test.hook } : {}) };
+    const state_path = stream_id ? join(this.env.streamDir(stream_id), "state.json") : null;
+    return { run_id, stream_id, pipeline, trigger, scheduled_for, clock, input_override, proxy, state_path, initial_state: null, ...(this.env.test?.hook ? { test_hook: this.env.test.hook } : {}) };
   }
 
   private spawn(): void {
@@ -388,6 +391,8 @@ export class RunProcess {
       sandbox: this.env.sandboxExec ? "seatbelt" : "none",
       engine_version: ENGINE_VERSION,
       ...(status === "cancelled" ? { cancelled_at_step: this.currentStep } : {}),
+      // Every source read fine and there was nothing to deliver: the host can say "nothing new today".
+      ...(status === "succeeded" && this.results.length === 0 && this.warnings.length === 0 && this.job.pipeline.output.type === "host_result" ? { nothing_new: true } : {}),
     };
   }
 }
