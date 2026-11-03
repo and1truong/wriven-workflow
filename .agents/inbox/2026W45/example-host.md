@@ -1,6 +1,6 @@
 # Example host: một host mẫu chạy được, nằm trong repo
 
-Ghi nhận ngày 2026-11-03. Giai đoạn SDLC: **Code đã viết trước khi grilling; chưa spec, chưa ticket.** Bản ghi không phải bằng chứng đã đạt yêu cầu.
+Ghi nhận ngày 2026-11-03. Giai đoạn SDLC: **Code đã viết trước khi grilling; đã grilling một lượt, đã viết spec và ticket.** Bản ghi không phải bằng chứng đã đạt yêu cầu.
 
 **Sai quy trình.** Cháu viết `examples/host/` và commit `5f70022` vào `main` khi chưa có file này, chưa grilling, chưa spec. Hong: "chưa, chưa inbox, grill, spec, … đã làm rồi à?", rồi "không cần gỡ; giờ đưa vào inbox". Code giữ nguyên; lượt grilling dưới đây xét lại những lựa chọn cháu đã chốt ngầm trong code. Quyết định nào khác với code thì code đổi theo, qua ticket.
 
@@ -30,7 +30,7 @@ Ghi nhận ngày 2026-11-03. Giai đoạn SDLC: **Code đã viết trước khi 
 
 ## Lượt 1 (2026-11-03)
 
-Câu hỏi đang mở, mỗi câu kèm đề xuất; "yes" là chấp nhận. Chưa có quyết định nào.
+Hong: "grilling 1: đồng ý hết". Cả tám đề xuất dưới đây là quyết định. Cùng lúc, Hong cho viết lại lịch sử để bỏ một nhắc tới việc nội bộ khỏi message của commit example host trên `main` (commit mới `be50038`, chưa push).
 
 3. **Package riêng, và `bun test` ở gốc chỉ quét `tests/`.** `examples/host/` có `package.json` và lockfile riêng nên dependency của nó không vào binary engine; `bunfig.toml` (`[test] root = "tests"`) giữ suite engine như cũ; `bun run test:example` chạy test của example. Đề xuất: giữ.
 4. **SDK chính thức thay vì `fetch` thẳng.** SDK cho class lỗi có kiểu và type cho tool loop; đổi lại 8 package, hai cái Apache-2.0. Apache-2.0 là license permissive, dùng được trong repo MIT, chỉ cần giữ NOTICE nếu phân phối lại; ở đây không phân phối. Đề xuất: giữ SDK, ghi lý do và danh sách license vào spec của example (quy tắc AGENTS: dependency mới cần một dòng trong spec).

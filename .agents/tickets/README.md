@@ -18,6 +18,14 @@ From [composition](../specs/composition.md). Each ticket updates the specs its "
 8. [composition-08-while](completed/2026w45/composition-08-while.md) (done) — `while`, `changes_message_ids`, iteration-qualified `host.llm` keys.
 9. [composition-09-workflow](completed/2026w45/composition-09-workflow.md) (done) — DAG of branches, exact dependency inference, `cycle`, `write_conflict`, skips.
 
+## Example host
+
+From [example-host](../specs/example-host.md). The example was built before its spec (commit `be50038`); these tickets cover what the grilling changed. 01 and 02 are independent; 03 after both, and blocked on credentials.
+
+1. [example-host-01-stream-get-pending-diff](example-host-01-stream-get-pending-diff.md) — `stream.get` returns the diff of a waiting update; the example stops computing its own.
+2. [example-host-02-cost-source-haiku-tier](example-host-02-cost-source-haiku-tier.md) — price table cites the pricing page and date; Haiku 5.5's long-prompt price.
+3. [example-host-03-live-run](example-host-03-live-run.md) — one live `run` and one `chat` turn against Claude, recorded in the example's README.
+
 ## Test mocks
 
 From [test-mocks](../specs/test-mocks.md). Each ticket updates the specs it names, in the same commit. Order: 01, then 02. Independent of the composition chain, except that 02's `try` check needs composition-06.

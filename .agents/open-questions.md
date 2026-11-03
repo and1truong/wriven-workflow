@@ -15,6 +15,8 @@ Two lists. The first is what Hong decides for this repository. The second is wha
 
 11. **Developer tooling.** Bun is pinned at 1.4.3, what this machine has, and its test runner names itself `1.4.3-canary.1`. x64 builds have never been executed here because Rosetta is not installed. Decide whether to upgrade Bun and install Rosetta before a first release. ([packaging-and-release](specs/packaging-and-release.md))
 
+12. **Credentials for the example host's live run.** [example-host-03](tickets/example-host-03-live-run.md) needs an API key or an `ant auth login` profile on this machine, and a go-ahead for a few cents of spend. ([example-host](specs/example-host.md) decision 9)
+
 ## For the Wriven side (preconditions for integration)
 
 Each item is a condition this design assumes about the host. Where Wriven already recorded a decision, it is linked. All read from the wriven-desktop repository on 2026-11-03.

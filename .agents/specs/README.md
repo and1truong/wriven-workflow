@@ -21,3 +21,7 @@ After v0, from the [composition grilling record](../inbox/2026W45/composition-co
 From the [test-mocks grilling record](../inbox/2026W45/test-mocks.md):
 
 11. [test-mocks](test-mocks.md) — `mocks` on `pipeline.test` and `tests[]`: replace a processor step with fixed messages, replies or a catchable failure, chosen per unit by a `condition`; shape narrowed to what downstream reads; `mock_unmatched`.
+
+From the [example-host grilling record](../inbox/2026W45/example-host.md):
+
+12. [example-host](example-host.md) — `examples/host/`: a working host with Claude, approval cards, results, reports and the agent tool loop; built before the spec, which records the decisions taken afterwards.
