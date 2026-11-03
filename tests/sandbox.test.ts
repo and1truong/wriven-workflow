@@ -98,8 +98,13 @@ describe("a run under the sandbox", () => {
   }, 30_000);
 
   test("past run_timeout: timed_out, with the outstanding request cancelled", async () => {
-    const { host } = await startInProcess({ engine: { test: { runTimeoutMs: 500 } }, llm: { mode: "hold" } });
-    const report = await run(host);
+    // Fired once host.llm is with the host, so a slow start under load cannot beat the request.
+    let fire!: () => void;
+    const { host } = await startInProcess({ engine: { test: { runTimeout: (f) => (fire = f) } }, llm: { mode: "hold" } });
+    const finished = run(host);
+    await host.waitFor((m) => m.method === "host.llm");
+    fire();
+    const report = await finished;
     expect(report.status).toBe("timed_out");
     expect(report.error.kind).toBe("timed_out");
     expect(report.error.step_id).toBe("ask");

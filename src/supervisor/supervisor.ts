@@ -78,7 +78,8 @@ export interface SupervisorEnv {
   // True when the engine runs on an injected clock, which the run process must share.
   injectClock: boolean;
   // Lets tests shorten what the format's minimums would make slow, and exercise the watchdog.
-  test?: { runTimeoutMs?: number; hook?: RunInit["test_hook"]; dial?: ProxyOptions["dial"] };
+  // `runTimeout` receives the run's timeout to fire when the test chooses, instead of a wall-clock timer.
+  test?: { runTimeout?: (fire: () => void) => void; hook?: RunInit["test_hook"]; dial?: ProxyOptions["dial"] };
   log(level: LogLevel, msg: string, fields?: Record<string, unknown>): void;
   onStarted(job: RunJob, startedAt: string): void;
   // Replaces the requests the fake world answers in `pipeline.test`.
@@ -142,10 +143,11 @@ export class RunProcess {
     }
     this.env.onStarted(this.job, this.startedAt);
     void this.watchMemory();
-    const timeout = this.env.test?.runTimeoutMs ?? this.timeoutMs();
-    this.timeoutTimer = setTimeout(() => {
+    const timedOut = () => {
       this.killWith({ status: "timed_out", error: this.errorOf("timed_out", `The run passed its limit of ${this.job.pipeline.limits.run_timeout}.`) });
-    }, timeout);
+    };
+    if (this.env.test?.runTimeout) this.env.test.runTimeout(timedOut);
+    else this.timeoutTimer = setTimeout(timedOut, this.timeoutMs());
     let outcome: RunOutcome | null = null;
     let failure: RpcError | null = null;
     try {
@@ -156,7 +158,7 @@ export class RunProcess {
     this.finishing = true;
     // A run that failed while sibling calls were still with the host does not wait for them.
     if (this.outstanding.size > 0) this.cancelOutstanding();
-    clearTimeout(this.timeoutTimer);
+    if (this.timeoutTimer) clearTimeout(this.timeoutTimer);
     if (this.killTimer) clearTimeout(this.killTimer);
     await this.waitForExit();
     this.cleanUp();
