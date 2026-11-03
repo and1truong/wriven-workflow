@@ -1,0 +1,48 @@
+# Builds and publishes a release from a tag. Not run yet: Actions quota for private repositories is used
+# up, so the same script has only been run locally (see dist/release/release-notes.md after a run).
+name: release
+on:
+  push:
+    tags: ["v*"]
+jobs:
+  release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun test
+      - name: Import the Developer ID certificate, when there is one
+        if: ${{ env.DEVELOPER_ID != '' }}
+        env:
+          DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
+          CERTIFICATE_P12: ${{ secrets.CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          echo "$CERTIFICATE_P12" | base64 --decode > cert.p12
+          security create-keychain -p ci build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p ci build.keychain
+          security import cert.p12 -k build.keychain -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
+          xcrun notarytool store-credentials release --apple-id "$NOTARY_APPLE_ID" --team-id "$NOTARY_TEAM_ID" --password "$NOTARY_PASSWORD"
+      - name: Build, sign, check
+        env:
+          DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
+          NOTARY_PROFILE: release
+        run: |
+          if [ -n "$DEVELOPER_ID" ]; then
+            bun run scripts/release.ts --tag "$GITHUB_REF_NAME" --identity "$DEVELOPER_ID" --notarize
+          else
+            bun run scripts/release.ts --tag "$GITHUB_REF_NAME"
+          fi
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/release/*.tar.gz dist/release/SHA256SUMS --notes-file dist/release/release-notes.md

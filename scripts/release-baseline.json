@@ -1,0 +1,10 @@
+{
+  "darwin-arm64": {
+    "mb": 62.5,
+    "startup_ms": 10.8
+  },
+  "darwin-x64": {
+    "mb": 78.8,
+    "startup_ms": null
+  }
+}

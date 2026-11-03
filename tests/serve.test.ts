@@ -137,3 +137,15 @@ describe("cli", () => {
     expect(results.length).toBeGreaterThan(0);
   }, 120_000);
 });
+
+describe("notices", () => {
+  test("every lockfile package is listed and allowed", async () => {
+    const { disallowed, lockfilePackages, readNotices, renderNotices } = await import("../scripts/notices.ts");
+    const { REPO } = await import("./helpers.ts");
+    const notices = readNotices(REPO);
+    expect(notices.map((n) => n.name)).toEqual(lockfilePackages(REPO));
+    expect(disallowed(notices)).toEqual([]);
+    expect(disallowed([{ name: "x", version: "1", license: "GPL-3.0" }]).length).toBe(1);
+    expect(renderNotices(notices, "1.4.3")).toContain("| typescript |");
+  });
+});

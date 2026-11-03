@@ -16,11 +16,13 @@ How the engine is built into one executable per architecture, signed, checked, v
 
 ## Build
 
-- Toolchain: Bun ≥ 1.4.4 (the version is pinned in `.bun-version` and in CI). Rationale and alternatives in [ADR 001](../decisions/001-runtime-bun.md).
+- Toolchain: Bun, pinned in `.bun-version` and checked by the release script. It is 1.4.3 today, what Hong's machine has; this spec first said ≥ 1.4.4 and nothing yet shows 1.4.4 is needed. Rationale and alternatives in [ADR 001](../decisions/001-runtime-bun.md).
 - Command (indicative): `bun build --compile --target=bun-darwin-arm64 --minify --sourcemap=none src/main.ts src/run.ts --outfile dist/wriven-workflow`. Any file that becomes a Worker or a child entry must be listed explicitly; Bun does not auto-detect them (measured 2026-11-03). v0 has no Worker; the run process is the same binary re-executed with `--run`, so only `main.ts` is an entrypoint unless the structure changes.
 - Cross-build for x64 from an arm64 host works (`--target=bun-darwin-x64`), but the resulting binary's signature was invalid on Bun 1.4.3 and must be re-signed (measured 2026-11-03). CI always re-signs both targets regardless.
 - No native addons. Every dependency must be pure JavaScript/TypeScript; the list is in `THIRD_PARTY_NOTICES.md` with licenses. Target: zero runtime dependencies beyond Bun's built-ins for v0 (cron parsing, feed parsing, JSON Pointer, the proxy and the Seatbelt profile are small enough to own).
 - Embedded assets: the JSON Schemas for the pipeline format and the report, the tool descriptions, and the sentence templates are imported as modules so they are inside the binary and versioned with it.
+
+Runtime dependencies: none. Dev dependencies, for type-checking only and listed in `THIRD_PARTY_NOTICES.md`: `typescript` (Apache-2.0) and `@types/bun` (MIT), with what they pull in. The executable contains none of their code.
 
 ## Signing and notarization (macOS)
 
@@ -36,6 +38,8 @@ Without a Developer ID (Hong's machine today has only an Apple Development ident
 
 Signature stability matters for the host, not the engine: Wriven's Keychain "Always Allow" is bound to Wriven's signature, and the engine never touches the Keychain. Changing the engine's identity has no Keychain effect.
 
+Measured 2026-11-03 on macOS 27.0.1, arm64: an ad-hoc signature with `--options runtime` and `entitlements.plist` keeps everything working, JIT and the `bun:ffi` call behind `engine.lock` included (`doctor` exit 0, 10/10 conformance). A real Developer ID, `spctl` and `notarytool` have not been run; there is no Developer ID, and the CI workflow has not run either because Actions quota for private repositories is used up.
+
 ## Versioning
 
 - Engine version: semantic versioning, `0.x` during v0. The protocol, format and report versions are separate integers inside the binary; the engine's minor version bumps when any of them gains an optional field, its major when any of them changes incompatibly.
@@ -44,8 +48,8 @@ Signature stability matters for the host, not the engine: Wriven's Keychain "Alw
 ## Checks before a release
 
 - `bun test` green, including protocol conformance fixtures replayed through `fake-host`.
-- `wriven-workflow doctor` exit 0 on a clean macOS user account on both architectures (x64 under Rosetta is acceptable for the check if no Intel machine is available; record which).
-- Binary size and startup recorded; a regression over 20% blocks the release until explained.
+- `wriven-workflow doctor` exit 0 on a clean macOS user account on both architectures (x64 under Rosetta is acceptable for the check if no Intel machine is available; record which). The release script runs it on what it can execute and says "not run" in the notes otherwise, which is the x64 result on Hong's machine today because Rosetta is not installed there (checked 2026-11-03). A second, unmeasured architecture is shippable for development and is not for a public release.
+- Binary size and startup recorded against `scripts/release-baseline.json`; a regression over 20% blocks the release until explained (`--accept-regression`).
 - `THIRD_PARTY_NOTICES.md` regenerated and diffed.
 - Checksums generated; archives extracted and `--version` compared with the tag.
 
