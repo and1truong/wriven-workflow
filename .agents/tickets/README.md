@@ -13,7 +13,7 @@ All derive from the [specs](../specs/README.md); none is started.
 5. [engine-05-proxy-http-fetch](completed/2026w45/engine-05-proxy-http-fetch.md) — egress proxy with allowlist and token; `http_fetch` with URL rules, `on_error`, `retry`; network sentences.
 6. [engine-06-parse-feed-dedupe-collect](completed/2026w45/engine-06-parse-feed-dedupe-collect.md) — `parse_feed`, `dedupe` with commit-on-success, `collect`; **the feed-digest example runs end to end**; worked-example sentences byte-exact.
 7. [engine-07-approval-update-diff](completed/2026w45/engine-07-approval-update-diff.md) — approve with hash, subset rule on update, diff, rollback. Fixture 6.
-8. [engine-08-pipeline-test-harness-inject](engine-08-pipeline-test-harness-inject.md) — `pipeline.test` with injected input, mocked LLM, fixtures, fake clock; embedded tests; CLI `test`.
+8. [engine-08-pipeline-test-harness-inject](completed/2026w45/engine-08-pipeline-test-harness-inject.md) — `pipeline.test` with injected input, mocked LLM, fixtures, fake clock; embedded tests; CLI `test`.
 9. [engine-09-scheduler-engine-clock](engine-09-scheduler-engine-clock.md) — `schedule` input, cron and DST, missed-run policy, `schedule.preview`. Parallel with 04–08 after 03.
 10. [engine-10-limits-runs-per-day-cost](engine-10-limits-runs-per-day-cost.md) — `runs_per_day`, cost cap, host ceilings, `skipped`. Parallel with 04–08 after 03.
 11. [engine-11-packaging-release](engine-11-packaging-release.md) — both architectures, signing, checksums, notices, release notes.

@@ -17,6 +17,9 @@ import { Peer, type RequestContext } from "../protocol/peer.ts";
 import { selfCommand } from "../self.ts";
 import { newStreamId, StreamStore, type Manifest, type PinnedPipeline, type PreviousManifest } from "../state/streams.ts";
 import { ENGINE_NAME, ENGINE_VERSION, PIPELINE_FORMATS, PROTOCOL_VERSIONS, REPORT_VERSION } from "../version.ts";
+import { checkExpectations, runPipelineTest, type EmbeddedTest, type TestParams } from "../harness/pipeline-test.ts";
+import type { RunProcess } from "../supervisor/supervisor.ts";
+import { HOST_TOOLS_SUGGESTED, TOOLS, withToolResult } from "../tools/tools.ts";
 import { tryLock } from "./lock.ts";
 import { RunQueue } from "./run-queue.ts";
 import { probeSandbox, type SandboxStatus } from "../supervisor/seatbelt.ts";
@@ -47,6 +50,9 @@ export class Engine {
   private sandboxRequired = true;
   private queue!: RunQueue;
   private readonly now: () => Date;
+  private supervisorEnv!: SupervisorEnv;
+  private liveNetworkInTests = false;
+  private readonly activeTests = new Set<RunProcess>();
 
   constructor(private readonly options: EngineOptions) {
     this.now = options.now ?? (() => new Date());
@@ -71,16 +77,22 @@ export class Engine {
     this.options.exit(0);
   }
 
-  private async dispatch(method: string, params: any, _ctx: RequestContext): Promise<unknown> {
+  private async dispatch(method: string, params: any, ctx: RequestContext): Promise<unknown> {
     if (method === "initialize") return this.initialize(params);
     if (!this.initialized) {
       throw new RpcError("not_initialized", `The engine must be initialized before ${method}.`);
     }
+    return withToolResult(method, await this.call(method, params, ctx));
+  }
+
+  private call(method: string, params: any, ctx: RequestContext): unknown {
     switch (method) {
       case "components.list":
         return this.listComponents(params);
       case "pipeline.validate":
         return this.validate(params);
+      case "pipeline.test":
+        return this.testPipeline(params, ctx);
       case "stream.create":
         return this.createStream(params);
       case "stream.approve":
@@ -145,7 +157,8 @@ export class Engine {
       llmReportsCost: capabilities.llm_reports_cost === true,
     };
     this.streams = new StreamStore(join(stateDir, "streams"));
-    this.queue = new RunQueue({
+    this.liveNetworkInTests = capabilities.live_network_in_tests === true;
+    this.supervisorEnv = {
       hostPeer: this.peer,
       command: this.options.command ?? selfCommand(),
       now: this.now,
@@ -161,8 +174,8 @@ export class Engine {
       onStarted: (job, startedAt) => {
         this.peer.notify("run.started", { run_id: job.run_id, stream_id: job.stream_id, trigger: job.trigger, scheduled_for: job.scheduled_for, started_at: startedAt });
       },
-      emitFinished: (report) => this.peer.notify("run.finished", { report }),
-    });
+    };
+    this.queue = new RunQueue({ ...this.supervisorEnv, emitFinished: (report) => this.peer.notify("run.finished", { report }) });
     this.initialized = true;
     return {
       protocol_version: params.protocol_version,
@@ -172,7 +185,8 @@ export class Engine {
       sandbox: { available: sandboxAvailable, mechanism: sandboxAvailable ? "seatbelt" : "none" },
       ceilings,
       components: publicComponents(),
-      tools: [],
+      tools: TOOLS,
+      host_tools_suggested: HOST_TOOLS_SUGGESTED,
       streams: this.streams.all().map((m) => this.streamRow(m)),
     };
   }
@@ -206,6 +220,39 @@ export class Engine {
       throw new RpcError("invalid_pipeline", `The pipeline is not valid: ${result.errors[0]?.message ?? "see errors"}`, { errors: result.errors });
     }
     return result;
+  }
+
+  private async testPipeline(params: any, ctx: RequestContext): Promise<unknown> {
+    const result = validatePipeline(params?.pipeline, { ...this.context, testing: true });
+    if (!result.valid) {
+      throw new RpcError("invalid_pipeline", `The pipeline is not valid: ${result.errors[0]?.message ?? "see errors"}`, { errors: result.errors });
+    }
+    this.requireSandbox();
+    const once = async (test: Partial<TestParams>) => {
+      if (test.network === "live" && !this.liveNetworkInTests) {
+        throw new RpcError("permission_denied", "This host does not allow live network in tests.");
+      }
+      return runPipelineTest(
+        { ...test, pipeline: params.pipeline, permissions: result.permissions, permissions_hash: result.permissions_hash },
+        this.supervisorEnv,
+        ctx.signal,
+        (process, active) => {
+          if (active) this.activeTests.add(process);
+          else this.activeTests.delete(process);
+        },
+      );
+    };
+    if (params.run_embedded !== true) {
+      return once({ input: params.input, llm: params.llm, fixtures: params.fixtures, network: params.network, clock: params.clock, state: params.state });
+    }
+    const tests: Array<{ name: string; passed: boolean; failures: string[]; status: string }> = [];
+    for (const test of (params.pipeline.tests ?? []) as EmbeddedTest[]) {
+      const outcome = await once(test);
+      const failures = checkExpectations(outcome, test.expect);
+      tests.push({ name: test.name, passed: failures.length === 0, failures, status: outcome.status });
+    }
+    const failed = tests.filter((t) => !t.passed).length;
+    return { status: failed === 0 ? "passed" : "failed", passed: tests.length - failed, failed, tests };
   }
 
   private createStream(params: any): unknown {
@@ -404,6 +451,7 @@ export class Engine {
 
   private stop(timeoutMs: number): Promise<void> {
     this.stopping ??= (async () => {
+      for (const test of this.activeTests) test.cancel("shutdown");
       await this.queue?.drain(timeoutMs);
       this.releaseLock?.();
       this.releaseLock = null;

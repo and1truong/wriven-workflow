@@ -33,6 +33,10 @@ export interface RunJob {
   queued_at: string;
   clock: string | null;
   input_override: RunInit["input_override"];
+  // Set in `pipeline.test`: pages come from this table and no socket opens. Null with live network.
+  fixtures?: RunInit["fixtures"];
+  // Set in `pipeline.test`: nothing is read from disk or written back.
+  initial_state?: RunInit["initial_state"];
 }
 
 const DEFAULT_MEMORY_SAMPLE_MS = 250;
@@ -147,14 +151,14 @@ export class RunProcess {
     const { run_id, stream_id, pipeline, trigger, scheduled_for, clock, input_override } = this.job;
     const proxy = this.proxy ? { port: this.proxy.port, token: this.proxyToken } : null;
     const state_path = stream_id ? join(this.env.streamDir(stream_id), "state.json") : null;
-    return { run_id, stream_id, pipeline, trigger, scheduled_for, clock, input_override, proxy, state_path, initial_state: null, ...(this.env.test?.hook ? { test_hook: this.env.test.hook } : {}) };
+    return { run_id, stream_id, pipeline, trigger, scheduled_for, clock, input_override, proxy, state_path, initial_state: this.job.initial_state ?? null, fixtures: this.job.fixtures ?? null, ...(this.env.test?.hook ? { test_hook: this.env.test.hook } : {}) };
   }
 
   private spawn(): void {
     this.tempDir = join(this.env.tempRoot, this.job.run_id);
     mkdirSync(this.tempDir, { recursive: true, mode: 0o700 });
     this.tempDir = realpathSync(this.tempDir);
-    if (this.job.permissions.network.length > 0) {
+    if (this.job.permissions.network.length > 0 && !this.job.fixtures) {
       this.proxyToken = randomBytes(24).toString("hex");
       this.proxy = startProxy({ allowedHosts: this.job.permissions.network.map((n) => n.host), token: this.proxyToken, dial: this.env.test?.dial });
     }

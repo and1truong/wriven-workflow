@@ -8,7 +8,7 @@ The tool definitions the engine publishes, their JSON Schema subset, how a host 
 
 ## Observable behaviour
 
-- `initialize` returns a `tools` array. Each entry has `name`, `description`, `input_schema`, and `method`. The host forwards the first three to the model in its provider's encoding and, when the model calls a tool, sends `method` with the tool's input as params and returns the RPC result (or error) as the tool result.
+- `initialize` returns a `tools` array. Each entry has `name`, `description`, `input_schema`, and `method`. The host forwards the first three to the model in its provider's encoding and, when the model calls a tool, sends `method` with the tool's input as params and returns the RPC error, or `result.tool_result`, as the tool result. `tool_result` is the same answer shaped for the model: no `permissions_hash`, at most 32 KiB. The rest of the RPC result is for the host, which needs the hash for `stream.approve`.
 - A model can go from "nothing" to an approved, running automation with four tool calls: `workflow_list_components` (optional), `workflow_validate_pipeline`, `workflow_test_pipeline`, `workflow_create_stream`, and then the person approves outside the model's control.
 - No tool approves anything, starts a run on an unapproved stream, or reads provider keys. The approval step is a host UI action that calls `stream.approve`.
 - Tool results are JSON, never larger than 32 KiB; larger payloads are truncated as valid JSON with `truncated: true`, `original_size`, and a `preview`.
@@ -77,13 +77,14 @@ The model never sees `permissions_hash`; the host keeps it from the create/updat
 | --- | --- | --- |
 | `input` | `{ "messages": [{ data, meta? }] }` replaces the input component's output for this run | the input component's normal single trigger message |
 | `llm` | `{ "mode": "mock", "responses": [string] }` answers `host_llm` calls in order (the last response repeats); `{ "mode": "echo" }` returns the prompt prefixed with `[mock reply] ` | `echo` |
-| `fixtures` | `{ "<url>": { "status": 200, "content_type": "application/rss+xml", "body": "<xml…>" } }` served to `http_fetch` by an in-process fixture server behind the proxy | none |
+| `fixtures` | `{ "<url>": { "status": 200, "content_type": "application/rss+xml", "body": "<xml…>" } }` answered to `http_fetch` from a table in the run process, with no socket and no proxy, so the test's profile allows no network at all. An HTTPS server would have to mint certificates for whatever host an agent names and ship a trust root in the binary. The allowlist check on URLs and redirects still runs. | none |
 | `network` | `mock`: any URL without a fixture fails with `fixture_missing`; `live`: real HTTPS through the proxy with the derived allowlist, only when the host allowed it at `initialize` | `mock` |
-| `clock` | RFC 3339 instant the run believes is "now"; affects `dedupe` expiry and the trigger message | real time |
+| `clock` | RFC 3339 instant the run believes is "now"; affects `dedupe` expiry and the trigger message's `scheduled_for` | real time |
+| `state` | `{ "version": 1, "seen": { "<step_id>": { "<key>": <RFC 3339> } } }`, keys the run believes it has already seen. A test keeps no state, so this is how it can exercise `dedupe` | empty |
 
 The result is a run report with `trigger: "test"`, plus `results[]` (what would have gone to `host.result`) and `llm_requests[]` (prompts the host would have received). Tests never write state and never call the real host for `host.llm` or `host.result`.
 
-**Embedded tests.** A pipeline may carry `tests: [{ name, input?, llm?, fixtures?, clock?, expect: { status, results_count?, result_body_contains?: [string], warnings_count?, error_kind? } }]`. `wriven-workflow test <file>` and `pipeline.test` with `{ "run_embedded": true }` run them all. The assertion vocabulary is deliberately small; it is what an agent can write without a language, modelled on Redpanda Connect's `output_batches` conditions ([research](../research/research-benthos.md) §7).
+**Embedded tests.** A pipeline may carry `tests: [{ name, input?, llm?, fixtures?, network?, clock?, state?, expect: { status, results_count?, result_body_contains?: [string], warnings_count?, error_kind? } }]`. `wriven-workflow test <file>` and `pipeline.test` with `{ "run_embedded": true }` run them all and return `{ status: "passed" | "failed", passed, failed, tests: [{ name, passed, failures[], status }] }`. The assertion vocabulary is deliberately small; it is what an agent can write without a language, modelled on Redpanda Connect's `output_batches` conditions ([research](../research/research-benthos.md) §7).
 
 ## Result truncation
 

@@ -64,7 +64,7 @@ The host sends `initialize` first; the engine answers nothing else until then (a
 }
 ```
 
-The `tools` array is what the host forwards to the model, after any provider-specific encoding ([agent-surface](agent-surface.md)). `streams` lets the host rebuild its view after a restart without a second call.
+The `tools` array is what the host forwards to the model, after any provider-specific encoding ([agent-surface](agent-surface.md)). The result of each method a tool maps to also carries `tool_result`, the same answer shaped for the model. `host_tools_suggested` describes `workflow_list_runs`, which the host implements if it wants to. `streams` lets the host rebuild its view after a restart without a second call.
 
 ## Host → engine methods
 
@@ -74,7 +74,7 @@ All take and return JSON objects. Errors use the vocabulary below.
 | --- | --- | --- | --- |
 | `components.list` | `{}` | `{ components, pipeline_schema }` | Same as in `initialize`, plus the full JSON Schema of the current format version. |
 | `pipeline.validate` | `{ pipeline }` | `{ valid, errors[], warnings[], permissions?, rendered? }` | Never touches network or state. |
-| `pipeline.test` | `{ pipeline, input?, llm?, fixtures?, network?, clock? }` | `{ status, report, results[], llm_requests[] }` | Runs once in a sandboxed run process with the harness; see [agent-surface](agent-surface.md#pipeline-tests). `network` defaults to `mock`; `live` requires the host capability. |
+| `pipeline.test` | `{ pipeline, input?, llm?, fixtures?, network?, clock?, state?, run_embedded? }` | `{ status, report, results[], llm_requests[] }` | Runs once in a sandboxed run process with the harness; see [agent-surface](agent-surface.md#pipeline-tests). `network` defaults to `mock`; `live` requires the host capability. |
 | `stream.create` | `{ pipeline, start_paused?, schedule_description? }` | `{ stream_id, status: "pending_approval", permissions, permissions_hash, rendered }` | Validates first; returns `invalid_pipeline` on failure. |
 | `stream.approve` | `{ stream_id, permissions_hash }` | `{ stream_id, status }` | `conflict` if the hash is stale. Status becomes `active`, or `paused` if `start_paused` was set. |
 | `stream.update` | `{ stream_id, pipeline }` | `{ stream_id, status, permissions, permissions_hash, rendered, diff? }` | Subset → applied, status unchanged. Otherwise `pending_approval` with `diff`. |

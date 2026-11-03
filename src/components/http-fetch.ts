@@ -2,7 +2,7 @@
 
 import { hostOfUrl, urlProblem } from "../pipeline/urls.ts";
 import { parseDuration } from "../pipeline/duration.ts";
-import { StepError, type Message } from "../executor/messages.ts";
+import { StepError, type Message, type RunInit } from "../executor/messages.ts";
 import { ENGINE_VERSION } from "../version.ts";
 import type { Processor, StepContext } from "./runtime.ts";
 
@@ -50,6 +50,20 @@ export function proxyFetcher(proxy: ProxyTarget, tlsCa?: string): Fetcher {
     const out: Record<string, string> = {};
     response.headers.forEach((value, key) => (out[key.toLowerCase()] = value));
     return { status: response.status, headers: out, body: await readCapped(response, url, maxBytes) };
+  };
+}
+
+// Serves a test's fixtures from memory. No socket opens, so a test run's profile needs no network.
+export function fixtureFetcher(fixtures: NonNullable<RunInit["fixtures"]>): Fetcher {
+  return async (url, { maxBytes }) => {
+    const fixture = fixtures[url];
+    if (!fixture) throw new StepError("fixture_missing", `There is no fixture for ${url}.`);
+    const body = new TextEncoder().encode(fixture.body ?? "");
+    if (body.length > maxBytes) throw new StepError("body_too_large", `${url} is larger than the limit of ${maxBytes} bytes.`);
+    const headers: Record<string, string> = {};
+    for (const [key, value] of Object.entries(fixture.headers ?? {})) headers[key.toLowerCase()] = value;
+    if (fixture.content_type) headers["content-type"] = fixture.content_type;
+    return { status: fixture.status ?? 200, headers, body };
   };
 }
 
@@ -171,8 +185,9 @@ export const httpFetch: Processor = async (config, batch, ctx) => {
             meta: { ...message.meta, source_url: url },
           };
         } catch (err) {
-          const cancelled = ctx.signal.aborted || (err instanceof StepError && err.kind === "cancelled");
-          if (config.on_error === "skip" && err instanceof StepError && !cancelled) {
+          // A missing fixture is a mistake in the test, not a source being down.
+          const terminal = ctx.signal.aborted || (err instanceof StepError && (err.kind === "cancelled" || err.kind === "fixture_missing"));
+          if (config.on_error === "skip" && err instanceof StepError && !terminal) {
             ctx.warn(id, err.kind, err.message);
             continue;
           }

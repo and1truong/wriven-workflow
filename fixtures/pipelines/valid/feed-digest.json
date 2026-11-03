@@ -56,5 +56,121 @@
     "llm_calls_per_run": 1,
     "runs_per_day": 2,
     "run_timeout": "5m"
-  }
+  },
+  "tests": [
+    {
+      "name": "new posts make one digest",
+      "fixtures": {
+        "https://example.com/feed.xml": {
+          "status": 200,
+          "content_type": "application/rss+xml",
+          "body": "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Alpha</title><item><title>Alpha a1</title><guid>a1</guid></item><item><title>Alpha a2</title><guid>a2</guid></item></channel></rss>"
+        },
+        "https://blog.example.org/rss": {
+          "status": 200,
+          "content_type": "application/rss+xml",
+          "body": "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Beta</title><item><title>Beta b1</title><guid>b1</guid></item></channel></rss>"
+        },
+        "https://news.example.net/atom.xml": {
+          "status": 200,
+          "content_type": "application/rss+xml",
+          "body": "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Gamma</title><item><title>Gamma g1</title><guid>g1</guid></item></channel></rss>"
+        }
+      },
+      "llm": {
+        "mode": "mock",
+        "responses": [
+          "The digest."
+        ]
+      },
+      "expect": {
+        "status": "succeeded",
+        "results_count": 1,
+        "result_body_contains": [
+          "The digest."
+        ],
+        "warnings_count": 0
+      }
+    },
+    {
+      "name": "a feed that is down is skipped and reported",
+      "fixtures": {
+        "https://example.com/feed.xml": {
+          "status": 200,
+          "content_type": "application/rss+xml",
+          "body": "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Alpha</title><item><title>Alpha a1</title><guid>a1</guid></item><item><title>Alpha a2</title><guid>a2</guid></item></channel></rss>"
+        },
+        "https://blog.example.org/rss": {
+          "status": 200,
+          "content_type": "application/rss+xml",
+          "body": "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Beta</title><item><title>Beta b1</title><guid>b1</guid></item></channel></rss>"
+        },
+        "https://news.example.net/atom.xml": {
+          "status": 503,
+          "body": "down"
+        }
+      },
+      "llm": {
+        "mode": "mock",
+        "responses": [
+          "Partial digest."
+        ]
+      },
+      "expect": {
+        "status": "succeeded",
+        "results_count": 1,
+        "warnings_count": 1
+      }
+    },
+    {
+      "name": "a missing fixture is a mistake in the test",
+      "fixtures": {
+        "https://example.com/feed.xml": {
+          "status": 200,
+          "content_type": "application/rss+xml",
+          "body": "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Alpha</title><item><title>Alpha a1</title><guid>a1</guid></item><item><title>Alpha a2</title><guid>a2</guid></item></channel></rss>"
+        }
+      },
+      "expect": {
+        "status": "failed",
+        "error_kind": "fixture_missing"
+      }
+    },
+    {
+      "name": "nothing new makes no call and no result",
+      "clock": "2026-11-03T08:00:00Z",
+      "fixtures": {
+        "https://example.com/feed.xml": {
+          "status": 200,
+          "content_type": "application/rss+xml",
+          "body": "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Alpha</title><item><title>Alpha a1</title><guid>a1</guid></item><item><title>Alpha a2</title><guid>a2</guid></item></channel></rss>"
+        },
+        "https://blog.example.org/rss": {
+          "status": 200,
+          "content_type": "application/rss+xml",
+          "body": "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Beta</title><item><title>Beta b1</title><guid>b1</guid></item></channel></rss>"
+        },
+        "https://news.example.net/atom.xml": {
+          "status": 200,
+          "content_type": "application/rss+xml",
+          "body": "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Gamma</title><item><title>Gamma g1</title><guid>g1</guid></item></channel></rss>"
+        }
+      },
+      "state": {
+        "version": 1,
+        "seen": {
+          "new_only": {
+            "a1": "2026-11-02T08:00:00Z",
+            "a2": "2026-11-02T08:00:00Z",
+            "b1": "2026-11-02T08:00:00Z",
+            "g1": "2026-11-02T08:00:00Z"
+          }
+        }
+      },
+      "expect": {
+        "status": "succeeded",
+        "results_count": 0
+      }
+    }
+  ]
 }
