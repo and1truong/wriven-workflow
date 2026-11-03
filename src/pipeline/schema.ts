@@ -3,11 +3,12 @@
 import { COMPONENTS, componentSchema } from "../components/definitions.ts";
 import { PIPELINE_FORMAT } from "../version.ts";
 import { COMPILED_CEILINGS } from "./ceilings.ts";
+import { CONDITION_SCHEMA } from "./condition.ts";
 import { DURATION_PATTERN } from "./duration.ts";
 import type { JsonSchema } from "./json-schema.ts";
 
 function ofKind(kind: string): JsonSchema {
-  return { oneOf: COMPONENTS.filter((c) => c.kind === kind).map(componentSchema) };
+  return { oneOf: COMPONENTS.filter((c) => c.kind === kind).map((c) => componentSchema(c, true)) };
 }
 
 export const LIMITS_SCHEMA: JsonSchema = {
@@ -83,5 +84,6 @@ export function pipelineSchema(): JsonSchema {
       processors: { type: "array", items: ofKind("processor") },
       output: ofKind("output"),
     },
+    $defs: { condition: CONDITION_SCHEMA },
   };
 }

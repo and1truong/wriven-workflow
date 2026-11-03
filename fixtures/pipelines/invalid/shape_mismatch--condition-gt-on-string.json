@@ -1,0 +1,36 @@
+{
+  "format": "wriven-workflow/pipeline@1",
+  "name": "Condition",
+  "input": {
+    "type": "host_trigger"
+  },
+  "processors": [
+    {
+      "id": "fetch",
+      "type": "http_fetch",
+      "urls": [
+        "https://example.com/feed.xml"
+      ]
+    },
+    {
+      "id": "parse",
+      "type": "parse_feed"
+    },
+    {
+      "id": "keep",
+      "type": "filter",
+      "keep_if": {
+        "field": "/title",
+        "gt": 3
+      }
+    }
+  ],
+  "output": {
+    "type": "drop"
+  },
+  "limits": {
+    "llm_calls_per_run": 0,
+    "runs_per_day": 1,
+    "run_timeout": "1m"
+  }
+}

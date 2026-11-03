@@ -8,7 +8,7 @@ All derive from the [specs](../specs/README.md). All twelve v0 tickets are done 
 
 From [composition](../specs/composition.md). Each ticket updates the specs its "Changes to other specs" entries name, in the same commit. Order: 01 and 02 in parallel; 03 after 01; then 04, 05, 06 and 08 in parallel after 03 (08 also needs 02); 07 after 05 and 06 (its worked example also needs 01 and 04); 09 last, after 04 and 08.
 
-1. [composition-01-condition-filter](composition-01-condition-filter.md) — the declarative `condition` type with shape checks; `filter`.
+1. [composition-01-condition-filter](completed/2026w45/composition-01-condition-filter.md) (done) — the declarative `condition` type with shape checks; `filter`.
 2. [composition-02-split-log-sleep](composition-02-split-log-sleep.md) — leaf components; report `logs`; fake-clock `sleep`; `sleep_exceeds_timeout`.
 3. [composition-03-nested-steps-for-each](composition-03-nested-steps-for-each.md) — nested step lists, pipeline-wide ids, ceilings, id-preservation property, permission walk, report `parent`/`invocations`; sequential `for_each`.
 4. [composition-04-concurrent-host-llm](composition-04-concurrent-host-llm.md) — `llm_concurrency` capability, reserved budget, concurrent `for_each`, harness clamp, conformance case.

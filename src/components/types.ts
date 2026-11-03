@@ -36,6 +36,8 @@ export interface ComponentDef {
   check?(config: any, shape: Shape, ctx: CheckContext): void;
   // The data shape it emits, given the shape it receives. Omitted: unchanged.
   outputShape?(config: any, shape: Shape): Shape;
+  // Every output message carries the id of an input message and none is made from nothing.
+  preservesIds?: boolean;
   // What this component adds to the permissions object.
   permissions?(config: any, draft: PermissionsDraft): void;
 }

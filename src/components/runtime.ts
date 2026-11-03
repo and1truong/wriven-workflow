@@ -7,6 +7,7 @@ import { StepError, type Message } from "../executor/messages.ts";
 import { httpFetch, type Fetcher } from "./http-fetch.ts";
 import { parseFeed } from "./parse-feed.ts";
 import { DEDUPE_DEFAULTS } from "./definitions.ts";
+import { evaluate } from "../pipeline/condition.ts";
 import type { RunState } from "../executor/run-state.ts";
 
 export interface StepContext {
@@ -117,7 +118,9 @@ const collect: Processor = async (config, batch, ctx) => {
   return [{ id: `${first?.id ?? ctx.stepId}.c`, data: { items: kept.map((m) => m.data), count: kept.length }, meta: { ...first?.meta } }];
 };
 
-const PROCESSORS: Record<string, Processor> = { http_fetch: httpFetch, parse_feed: parseFeed, dedupe, collect, template, host_llm: hostLlm };
+const filter: Processor = async (config, batch, ctx) => batch.filter((message) => evaluate(config.keep_if, message, ctx.now()));
+
+const PROCESSORS: Record<string, Processor> = { http_fetch: httpFetch, parse_feed: parseFeed, dedupe, collect, template, host_llm: hostLlm, filter };
 
 export function processorFor(type: string): Processor {
   const processor = PROCESSORS[type];

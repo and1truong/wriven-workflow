@@ -16,7 +16,7 @@
   - Validation warning `per_message_context` for `collect` directly inside it.
 - **Spec update.** [pipeline-format](../specs/pipeline-format.md): nesting, step-id uniqueness, ceilings, the three new codes.
 
-**Blocked by:** [composition-01](composition-01-condition-filter.md), for the shape-check helpers it extends.
+**Blocked by:** [composition-01](completed/2026w45/composition-01-condition-filter.md), for the shape-check helpers it extends.
 
 **Verification:**
 - **Behaviour:**

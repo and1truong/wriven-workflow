@@ -54,7 +54,9 @@ A JSON object, used by `filter.keep_if`, `switch.cases[].when` and `while.repeat
 
 **Combinators**: `{ "all": [conditions] }`, `{ "any": [conditions] }`, `{ "not": condition }`. At most 4 levels deep and 32 leaves.
 
-**Missing fields.** A leaf whose field does not resolve is false, except `exists: false`, which is true. `not` inverts that, so `{ "not": { "field": "/title", "contains": "ad" } }` is true for a message with no `/title`. `components.list` says this in the description of `not`.
+**Missing fields.** A leaf whose field does not resolve is false, except `exists: false`, which is true. `not` inverts that, so `{ "not": { "field": "/title", "contains": "ad" } }` is true for a message with no `/title`. `components.list` says this in its `condition` entry, which documents every operator.
+
+**Null.** A null value counts as no value: only `equals: null` and `in` with `null` can be true of it, and `exists: true` holds. Feeds often have `published: null`, and a run should not fail over that.
 
 **Types.** When the upstream shape is known, validation checks that the operator fits the field (`gt` on a string field gives `shape_mismatch`) and that the field can resolve (`unresolved_pointer`, except under `exists`). When the shape is unknown, a mismatch at run time is a processor error, code `condition_type_mismatch`, which a `try` can catch.
 

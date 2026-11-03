@@ -90,6 +90,12 @@ Each component states: config fields, what it reads and emits, how it behaves on
 
 **`host_llm`** — sends `prompt` (pointer to a string) to the host and writes the reply text to `target`. Config: `prompt`, `target`, `system` (optional literal string, ≤ 4 000 characters, no placeholders), `max_output_tokens` (optional, ≤ 8 192). The engine counts calls against `limits.llm_calls_per_run` **before** forwarding; the host counts again. One call per message; to make one call for many items, put `collect` before it. Errors from the host are typed and end the run (no retry, ever). Permission: "Uses: the AI provider, at most N requests per run." and, when any upstream component fetched from the network, "Sends fetched web content to the AI provider."
 
+### Composition components (after v0)
+
+Specified in [composition](composition.md), which owns their behaviour; this list records which ones the engine has.
+
+- **`filter`**: keeps the messages for which `keep_if`, a [`condition`](composition.md#condition), is true. Permission: none.
+
 ### Outputs
 
 **`host_result`** — sends one result per message to the host: `{ "title": rendered, "body": value at pointer, "format": "markdown" | "text" }`. Config: `title` (literal, ≤ 120 characters), `body` (pointer to string), `format` (default `markdown`). The host decides what a result becomes (in Wriven: a new thread). Permission: "Writes results to: the host." (Wriven renders this as "a new chat in Wriven".)

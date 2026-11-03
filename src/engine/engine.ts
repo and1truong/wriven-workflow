@@ -11,6 +11,7 @@ import { DEFAULT_DISPLAY_NAME, renderPermissions } from "../pipeline/render.ts";
 import { canonicalJson } from "../pipeline/canonical.ts";
 import { REPORT_SCHEMA } from "../report.ts";
 import { pipelineSchema } from "../pipeline/schema.ts";
+import { CONDITION_DOC } from "../pipeline/condition.ts";
 import { isSubset, sentenceDiff } from "../pipeline/subset.ts";
 import { validatePipeline, type ValidationContext } from "../pipeline/validate.ts";
 import { RpcError } from "../protocol/errors.ts";
@@ -250,6 +251,7 @@ export class Engine {
       ceilings: this.context.ceilings,
       pipeline_schema: pipelineSchema(),
       report_schema: REPORT_SCHEMA,
+      condition: CONDITION_DOC,
     };
   }
 

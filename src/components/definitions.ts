@@ -8,9 +8,14 @@ import { DURATION_PATTERN, groupThousands, parseDuration } from "../pipeline/dur
 import { occurrencesPerDay, parseCron } from "../scheduler/cron.ts";
 import { nextOccurrences } from "../scheduler/occurrences.ts";
 import { isValidZone } from "../scheduler/zone.ts";
+import { checkCondition } from "../pipeline/condition.ts";
 import type { ComponentDef } from "./types.ts";
 
 const pointer = { type: "string", pattern: POINTER_PATTERN, patternMessage: "This must be a JSON Pointer such as /summary." };
+
+// Stand-ins resolved by `componentSchema`: a plain object for the engine's own checks, which recurse
+// with better messages, and a $ref into the pipeline schema's $defs when published.
+const conditionRef = { "x-ref": "condition" };
 
 export const retrySchema = {
   type: "object",
@@ -151,12 +156,25 @@ const parseFeed: ComponentDef = {
   },
 };
 
+const filter: ComponentDef = {
+  type: "filter",
+  kind: "processor",
+  summary: "Keep the messages for which keep_if is true and drop the rest. A condition on a missing field is false, so not of it is true.",
+  properties: { keep_if: conditionRef },
+  required: ["keep_if"],
+  preservesIds: true,
+  check(config, shape, ctx) {
+    checkCondition(config.keep_if, "keep_if", shape, ctx);
+  },
+};
+
 const DEFAULT_REMEMBER = "30d";
 const DEFAULT_MAX_KEYS = 10_000;
 
 const dedupe: ComponentDef = {
   type: "dedupe",
   kind: "processor",
+  preservesIds: true,
   summary: "Drop messages whose key was seen in an earlier successful run of this stream.",
   properties: {
     key: pointer,
@@ -193,6 +211,7 @@ const collect: ComponentDef = {
 const template: ComponentDef = {
   type: "template",
   kind: "processor",
+  preservesIds: true,
   summary: "Build text from a template with {{/pointer}} and {{meta:key}} placeholders.",
   properties: {
     text: { type: "string", maxLength: 20_000 },
@@ -220,6 +239,7 @@ const template: ComponentDef = {
 const hostLlm: ComponentDef = {
   type: "host_llm",
   kind: "processor",
+  preservesIds: true,
   summary: "Send a prompt to the host's language model and keep the reply.",
   properties: {
     prompt: pointer,
@@ -278,11 +298,21 @@ const drop: ComponentDef = {
 
 export const DEDUPE_DEFAULTS = { remember: DEFAULT_REMEMBER, max_keys: DEFAULT_MAX_KEYS };
 
-export const COMPONENTS: ComponentDef[] = [hostTrigger, schedule, inject, httpFetch, parseFeed, dedupe, collect, template, hostLlm, hostResult, drop];
+export const COMPONENTS: ComponentDef[] = [hostTrigger, schedule, inject, httpFetch, parseFeed, dedupe, collect, template, hostLlm, filter, hostResult, drop];
 
 export const COMPONENT_BY_TYPE = new Map(COMPONENTS.map((c) => [c.type, c]));
 
-export function componentSchema(def: ComponentDef): Record<string, any> {
+function resolveRefs(schema: unknown, published: boolean): unknown {
+  if (Array.isArray(schema)) return schema.map((item) => resolveRefs(item, published));
+  if (schema === null || typeof schema !== "object") return schema;
+  const ref = (schema as Record<string, unknown>)["x-ref"];
+  if (typeof ref === "string") return published ? { $ref: `#/$defs/${ref}` } : { type: "object" };
+  return Object.fromEntries(Object.entries(schema).map(([key, value]) => [key, resolveRefs(value, published)]));
+}
+
+// `published` puts $refs into the pipeline schema's $defs where a component holds a condition or
+// steps; the engine's own checks walk those itself.
+export function componentSchema(def: ComponentDef, published = false): Record<string, any> {
   const isProcessor = def.kind === "processor";
   return {
     type: "object",
@@ -291,11 +321,11 @@ export function componentSchema(def: ComponentDef): Record<string, any> {
     properties: {
       type: { const: def.type },
       ...(isProcessor ? { id: { type: "string", pattern: "^[a-z][a-z0-9_]{0,31}$" } } : {}),
-      ...def.properties,
+      ...(resolveRefs(def.properties, published) as Record<string, any>),
     },
   };
 }
 
 export function publicComponents(): Array<{ type: string; kind: string; schema: Record<string, any>; summary: string }> {
-  return COMPONENTS.map((def) => ({ type: def.type, kind: def.kind, schema: componentSchema(def), summary: def.summary }));
+  return COMPONENTS.map((def) => ({ type: def.type, kind: def.kind, schema: componentSchema(def, true), summary: def.summary }));
 }
