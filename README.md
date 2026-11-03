@@ -52,6 +52,7 @@ dist/wriven-workflow fake-host --conformance fixtures/protocol
 | [`src/`](src/) | The engine: `protocol`, `engine`, `pipeline`, `components`, `executor`, `supervisor`, `scheduler`, `state`, `harness`, `tools` |
 | [`fixtures/`](fixtures/) | Pipelines, feeds, test certificates and [protocol conformance scenarios](fixtures/protocol/README.md) |
 | [`docs/host-integration.md`](docs/host-integration.md) | How a host integrates the engine, with what Wriven has today and lacks |
+| [`examples/host/`](examples/host/README.md) | A working example host in TypeScript: spawn, handshake, `host.llm` with Claude, approval cards, results, reports, and the agent tool loop |
 | [`.agents/inbox/`](.agents/inbox/README.md) | The original intent and the grilling record, in Vietnamese |
 | [`.agents/specs/`](.agents/specs/README.md) | Specifications: architecture, pipeline format, delivery semantics, permissions, host protocol, agent surface, scheduling, packaging, threat model |
 | [`.agents/decisions/`](.agents/decisions/README.md) | Architecture decision records for the choices with large trade-offs |

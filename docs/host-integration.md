@@ -2,6 +2,8 @@
 
 For whoever implements the Wriven side. The contract is [host-protocol](../.agents/specs/host-protocol.md); this is how to meet it, with what Wriven has today and what it lacks. Statements about Wriven were read from `wriven-desktop` at commit `f82a9c5` on 2026-11-03 and carry a file reference; statements about the engine were tested against the engine in this repository. No host has been integrated, so nothing here has been run from Swift. Every section is a condition from [open-questions](../.agents/open-questions.md#for-the-wriven-side-preconditions-for-integration).
 
+A working host in TypeScript, with every obligation below in code and a test for each, is in [`examples/host`](../examples/host/README.md). It has run offline only.
+
 Wriven's own rule still decides when this happens: scheduling by words works and a task exists that the narrow schema cannot express (sidecar decision 8).
 
 ## Start here

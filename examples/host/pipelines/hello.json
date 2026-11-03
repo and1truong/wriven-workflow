@@ -1,0 +1,17 @@
+{
+  "format": "wriven-workflow/pipeline@1",
+  "name": "Hello",
+  "description": "Ask the model for one sentence and deliver it to the host.",
+  "input": { "type": "host_trigger" },
+  "processors": [
+    {
+      "id": "prompt",
+      "type": "template",
+      "target": "/prompt",
+      "text": "Write one cheerful sentence for someone starting their working day. Trigger: {{/trigger}}"
+    },
+    { "id": "ask", "type": "host_llm", "prompt": "/prompt", "target": "/reply", "max_output_tokens": 2000 }
+  ],
+  "output": { "type": "host_result", "title": "Hello", "body": "/reply", "format": "markdown" },
+  "limits": { "llm_calls_per_run": 1, "runs_per_day": 24, "run_timeout": "5m" }
+}

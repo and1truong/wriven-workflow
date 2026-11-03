@@ -1,0 +1,3 @@
+[test]
+# The engine suite. examples/host has its own package and tests: bun run test:example.
+root = "tests"
