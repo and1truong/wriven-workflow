@@ -14,6 +14,11 @@ Two lists. The first is what Hong decides for this repository. The second is wha
 9. **Registry publication.** GitHub releases only, or also npm/JSR. Not needed for Wriven. ([packaging-and-release](specs/packaging-and-release.md#open-points))
 
 11. **Developer tooling.** Bun is pinned at 1.4.3, what this machine has, and its test runner names itself `1.4.3-canary.1`. x64 builds have never been executed here because Rosetta is not installed. Decide whether to upgrade Bun and install Rosetta before a first release. ([packaging-and-release](specs/packaging-and-release.md))
+12. **Composition: four choices the spec proposes beyond the grilling record.** ([composition](specs/composition.md#decisions-and-reasons), decisions 8–11)
+    - Failures inside `try` are attributed to units (one URL of `http_fetch`, one message elsewhere), and `catch` receives the unit as the failing step saw it.
+    - `on_error: skip` becomes sugar for `try` with `catch: []`.
+    - Concurrent `host.llm` opt-in through an `initialize` capability `llm_concurrency` (default 1). This revises delivery-semantics decision 6.
+    - `while` bodies and `workflow` branches must preserve message ids, checked at validation.
 
 ## For the Wriven side (preconditions for integration)
 

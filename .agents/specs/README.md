@@ -13,3 +13,7 @@ Read in this order the first time:
 7. [scheduling](scheduling.md) — host-owned clock for Wriven, engine scheduler otherwise; cron 5-field with IANA zones, DST rules, declared missed-run policy (`skip` / `run_once` / `run_all`), no catch-up after resume, `schedule.preview`.
 8. [packaging-and-release](packaging-and-release.md) — Bun compile per architecture, re-sign in CI, entitlements and notarization path, `--version` and `doctor`, zero-dependency goal, release checks, host installation options.
 9. [threat-model](threat-model.md) — twelve threats from agent error, fetched content, supply chain, local attacker and engine bugs, with controls per spec and residual risks.
+
+After v0, from the [composition grilling record](../inbox/2026W45/composition-components.md):
+
+10. [composition](composition.md) — declarative `condition` type; `filter`, `switch`, `split`, `try`/`catch`, `for_each`, `while`, `workflow`, `sleep`, `log`; message-id preservation, unit-level failure attribution, loop-aware idempotency keys, opt-in concurrent `host.llm`, and the changes these force on the specs above.

@@ -70,4 +70,5 @@ Cháu hiểu câu thứ nhất là trả lời cho điểm mở 1 và 2: ngườ
 
 ## Liên quan
 
+- Spec: [composition](../../specs/composition.md) (2026-11-03)
 - [Grilling đầu](wriven-workflow.md), [pipeline-format](../../specs/pipeline-format.md), [ADR 003](../../decisions/003-no-expression-language.md), [research-benthos](../../research/research-benthos.md), [câu hỏi mở](../../open-questions.md)
