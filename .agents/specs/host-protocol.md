@@ -81,8 +81,8 @@ All take and return JSON objects. Errors use the vocabulary below.
 | `stream.pause` | `{ stream_id }` | `{ stream_id, status: "paused" }` | A running run continues to completion; queued triggers for the stream are cancelled. |
 | `stream.resume` | `{ stream_id }` | `{ stream_id, status: "active", next_run }` | No catch-up of occurrences missed while paused. |
 | `stream.delete` | `{ stream_id }` | `{ stream_id, status: "deleted" }` | Cancels a running run of that stream first. Removes manifest and state. |
-| `stream.list` | `{}` | `{ streams[] }` | As in `initialize`. |
-| `stream.get` | `{ stream_id }` | `{ stream_id, name, status, pipeline, permissions, permissions_hash, rendered, previous_pipeline?, created_at, updated_at, next_run }` | `pipeline` is the active one; `previous_pipeline` exists after an update. |
+| `stream.list` | `{}` | `{ streams[] }` | As in `initialize`. `permissions_hash` and `permission_sentences` are the ones waiting for approval when the status is `pending_approval`. |
+| `stream.get` | `{ stream_id }` | `{ stream_id, name, status, pipeline, permissions, permissions_hash, rendered, previous_pipeline?, pending?, created_at, updated_at, next_run }` | `pipeline` is the active one; `previous_pipeline` exists after an update; `pending` is a widening update waiting for approval, with its own `permissions_hash` and `rendered`, so a host that restarted can show the card. |
 | `run.trigger` | `{ stream_id, scheduled_for?, reason? }` | `{ run_id, status: "queued" }` | Refused for `pending_approval` (`permission_denied`) and `paused` (`conflict`). `scheduled_for` is what the host's own scheduler meant this run to be; copied into the report. Collapses with a queued trigger for the same stream. |
 | `run.cancel` | `{ run_id }` | `{ run_id, status }` | `not_found` if unknown; idempotent if already finished. |
 | `schedule.preview` | `{ cron, timezone, after, count? }` | `{ occurrences: [RFC 3339] }` | Pure function; lets a host that owns the clock use the engine's cron semantics. |
@@ -96,7 +96,7 @@ All take and return JSON objects. Errors use the vocabulary below.
 | `host.result` | request | `{ run_id, stream_id, message_id, idempotency_key, result: { title, body, format } }` | `{ accepted: true, ref?: string }` where `ref` is the host's own identifier (Wriven: a thread id) |
 | `run.started` | notification | `{ run_id, stream_id, trigger, scheduled_for, started_at }` | |
 | `run.finished` | notification | `{ report }` | The full run report, below. |
-| `stream.changed` | notification | `{ stream_id, status, reason }` | Sent when a status changes for a reason other than a host call (for example `failed` after repeated `runs_per_day_exceeded`, or an upgrade re-approval). |
+| `stream.changed` | notification | `{ stream_id, status, reason }` | Sent when a status changes for a reason the host did not ask for directly: a `stream.update` that moved the stream to or from `pending_approval` (reasons `permissions_widened`, `update_applied`, `rolled_back`; that call usually comes from the model's tool, and the host needs to show the approval card), or an upgrade re-approval. |
 | `log` | notification | `{ level, msg, run_id?, stream_id? }` | Mirrors stderr for hosts that do not read it. |
 
 Rules for `host.llm`:

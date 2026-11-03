@@ -8,12 +8,14 @@ import { logLine, type LogLevel } from "../log.ts";
 import { effectiveCeilings, type Ceilings } from "../pipeline/ceilings.ts";
 import { DURATION_PATTERN, parseDuration } from "../pipeline/duration.ts";
 import { DEFAULT_DISPLAY_NAME } from "../pipeline/render.ts";
+import { canonicalJson } from "../pipeline/canonical.ts";
 import { pipelineSchema } from "../pipeline/schema.ts";
+import { isSubset, sentenceDiff } from "../pipeline/subset.ts";
 import { validatePipeline, type ValidationContext } from "../pipeline/validate.ts";
 import { RpcError } from "../protocol/errors.ts";
 import { Peer, type RequestContext } from "../protocol/peer.ts";
 import { selfCommand } from "../self.ts";
-import { newStreamId, StreamStore, type Manifest } from "../state/streams.ts";
+import { newStreamId, StreamStore, type Manifest, type PinnedPipeline, type PreviousManifest } from "../state/streams.ts";
 import { ENGINE_NAME, ENGINE_VERSION, PIPELINE_FORMATS, PROTOCOL_VERSIONS, REPORT_VERSION } from "../version.ts";
 import { tryLock } from "./lock.ts";
 import { RunQueue } from "./run-queue.ts";
@@ -83,6 +85,8 @@ export class Engine {
         return this.createStream(params);
       case "stream.approve":
         return this.approveStream(params);
+      case "stream.update":
+        return this.updateStream(params);
       case "stream.pause":
         return this.pauseStream(params);
       case "stream.resume":
@@ -213,6 +217,8 @@ export class Engine {
       name: params.pipeline.name,
       status: "pending_approval",
       start_paused: params.start_paused === true,
+      pinned: null,
+      pending: null,
       ...(description ? { schedule_description: description } : {}),
       pipeline: params.pipeline,
       permissions: result.permissions,
@@ -247,15 +253,73 @@ export class Engine {
 
   private approveStream(params: any): unknown {
     const manifest = this.manifest(params);
-    if (params.permissions_hash !== manifest.permissions_hash) {
+    const waiting = manifest.pending?.permissions_hash ?? manifest.permissions_hash;
+    if (params.permissions_hash !== waiting) {
       throw new RpcError("conflict", "These are not the permissions this stream has now; show the current ones and ask again.", {
         reason: "stale_hash",
-        current: manifest.permissions_hash,
+        current: waiting,
       });
     }
     if (manifest.status !== "pending_approval") return { stream_id: manifest.stream_id, status: manifest.status };
-    const updated = this.save(manifest, { status: manifest.start_paused ? "paused" : "active" });
+    let updated: Manifest;
+    if (manifest.pending) {
+      this.streams.savePrevious(manifest.stream_id, previousOf(manifest));
+      const { resume_status, ...approved } = manifest.pending;
+      updated = this.save(manifest, { ...approved, name: approved.pipeline.name, status: resume_status, pending: null, pinned: pinnedOf(approved) });
+    } else {
+      updated = this.save(manifest, { status: manifest.start_paused ? "paused" : "active", pinned: pinnedOf(manifest) });
+    }
     return { stream_id: updated.stream_id, status: updated.status };
+  }
+
+  private async updateStream(params: any): Promise<unknown> {
+    const manifest = this.manifest(params);
+    const result = this.requireValid(params?.pipeline);
+    const description = manifest.schedule_description;
+    const next: PinnedPipeline = {
+      pipeline: params.pipeline,
+      permissions: result.permissions,
+      permissions_hash: result.permissions_hash,
+      rendered: withDescription(result.rendered, description),
+      rendered_version: 1,
+    };
+    const answer = (status: string, diff?: { added: string[]; removed: string[] }) => ({
+      stream_id: manifest.stream_id,
+      status,
+      permissions: next.permissions,
+      permissions_hash: next.permissions_hash,
+      rendered: next.rendered,
+      ...(diff ? { diff } : {}),
+    });
+
+    // Never approved: nothing is pinned, so this just replaces what is waiting.
+    if (!manifest.pinned) {
+      this.save(manifest, { ...next, name: params.pipeline.name });
+      return answer("pending_approval", sentenceDiff(next.rendered, manifest.rendered));
+    }
+
+    const previous = this.streams.previous(manifest.stream_id);
+    const isRollback = previous !== null && canonicalJson(previous.pipeline) === canonicalJson(params.pipeline);
+    const status = manifest.pending ? manifest.pending.resume_status : (manifest.status as "active" | "paused");
+    if (isRollback || isSubset(next.permissions, manifest.pinned.permissions)) {
+      // Applies at once and keeps the state. Rollback restores what the person approved back then.
+      this.streams.savePrevious(manifest.stream_id, previousOf(manifest));
+      const pinned = isRollback ? previous.pinned : manifest.pinned;
+      const updated = this.save(manifest, { ...next, name: params.pipeline.name, status, pending: null, pinned });
+      if (updated.status !== manifest.status) this.announceStatus(updated, isRollback ? "rolled_back" : "update_applied");
+      return answer(updated.status);
+    }
+
+    if (!manifest.pending) this.streams.savePrevious(manifest.stream_id, previousOf(manifest));
+    const updated = this.save(manifest, { status: "pending_approval", pending: { ...next, resume_status: status } });
+    await this.queue.cancelStream(manifest.stream_id, "pending_approval", false);
+    if (manifest.status !== updated.status) this.announceStatus(updated, "permissions_widened");
+    return answer("pending_approval", sentenceDiff(next.rendered, manifest.rendered));
+  }
+
+  // The host learns of it through its own tool loop only if it looks; a status it must act on is announced.
+  private announceStatus(manifest: Manifest, reason: string): void {
+    this.peer.notify("stream.changed", { stream_id: manifest.stream_id, status: manifest.status, reason });
   }
 
   private async pauseStream(params: any): Promise<unknown> {
@@ -286,6 +350,7 @@ export class Engine {
 
   private getStream(params: any): unknown {
     const m = this.manifest(params);
+    const previous = this.streams.previous(m.stream_id);
     return {
       stream_id: m.stream_id,
       name: m.name,
@@ -294,6 +359,8 @@ export class Engine {
       permissions: m.permissions,
       permissions_hash: m.permissions_hash,
       rendered: m.rendered,
+      ...(previous ? { previous_pipeline: previous.pipeline } : {}),
+      ...(m.pending ? { pending: { pipeline: m.pending.pipeline, permissions: m.pending.permissions, permissions_hash: m.pending.permissions_hash, rendered: m.pending.rendered } } : {}),
       created_at: m.created_at,
       updated_at: m.updated_at,
       next_run: null,
@@ -301,7 +368,14 @@ export class Engine {
   }
 
   private streamRow(m: Manifest) {
-    return { stream_id: m.stream_id, name: m.name, status: m.status, permissions_hash: m.permissions_hash, next_run: null, permission_sentences: m.rendered };
+    return {
+      stream_id: m.stream_id,
+      name: m.name,
+      status: m.status,
+      permissions_hash: m.pending?.permissions_hash ?? m.permissions_hash,
+      next_run: null,
+      permission_sentences: m.pending?.rendered ?? m.rendered,
+    };
   }
 
   private triggerRun(params: any): unknown {
@@ -336,6 +410,14 @@ export class Engine {
     })();
     return this.stopping;
   }
+}
+
+function pinnedOf(p: PinnedPipeline): NonNullable<Manifest["pinned"]> {
+  return { permissions: p.permissions, permissions_hash: p.permissions_hash };
+}
+
+function previousOf(m: Manifest): PreviousManifest {
+  return { pipeline: m.pipeline, permissions: m.permissions, permissions_hash: m.permissions_hash, rendered: m.rendered, rendered_version: 1, pinned: m.pinned };
 }
 
 function withDescription(rendered: string[], description: string | undefined): string[] {

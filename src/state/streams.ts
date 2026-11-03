@@ -16,11 +16,22 @@ export interface PinnedPipeline {
   rendered_version: 1;
 }
 
+export interface PendingUpdate extends PinnedPipeline {
+  // The status to return to when this is approved.
+  resume_status: "active" | "paused";
+}
+
 export interface Manifest extends PinnedPipeline {
   stream_id: string;
   name: string;
   status: StreamStatus;
   start_paused: boolean;
+  // What the person last approved, against which an update is compared; null before the first
+  // approval. A narrowing update changes the fields above and leaves this alone, so going back to
+  // anything inside what was approved needs no new approval.
+  pinned: { permissions: Permissions; permissions_hash: string } | null;
+  // A widening update waiting for approval. The fields above stay the last approved pipeline.
+  pending: PendingUpdate | null;
   schedule_description?: string;
   created_at: string;
   updated_at: string;
@@ -32,6 +43,10 @@ export function newStreamId(): string {
   let id = "s_";
   for (const byte of randomBytes(16)) id += CROCKFORD[byte % 32];
   return id;
+}
+
+export interface PreviousManifest extends PinnedPipeline {
+  pinned: Manifest["pinned"];
 }
 
 export class StreamStore {
@@ -60,6 +75,14 @@ export class StreamStore {
   save(manifest: Manifest): void {
     writeJsonAtomic(join(this.dir(manifest.stream_id), "manifest.json"), manifest);
     this.streams.set(manifest.stream_id, manifest);
+  }
+
+  previous(streamId: string): PreviousManifest | null {
+    return readJson<PreviousManifest>(join(this.dir(streamId), "manifest.previous.json"));
+  }
+
+  savePrevious(streamId: string, previous: PreviousManifest): void {
+    writeJsonAtomic(join(this.dir(streamId), "manifest.previous.json"), previous);
   }
 
   remove(streamId: string): void {

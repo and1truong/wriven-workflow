@@ -1,0 +1,290 @@
+{
+  "name": "Update narrows, update widens",
+  "description": "A narrowing update applies at once with the status unchanged. A widening update returns to pending_approval with a diff of sentences, and the stream cannot run until approved.",
+  "steps": [
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "h-1",
+        "method": "initialize",
+        "params": {
+          "protocol_version": 1,
+          "host": {
+            "name": "conformance",
+            "version": "0",
+            "display_name": "Wriven"
+          },
+          "clock": "host",
+          "state_dir": "$state_dir",
+          "sandbox": "optional",
+          "capabilities": {
+            "llm": true,
+            "llm_reports_cost": false,
+            "results": true,
+            "live_network_in_tests": false
+          }
+        }
+      }
+    },
+    {
+      "expect": {
+        "id": "h-1",
+        "result": {
+          "protocol_version": 1
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "h-2",
+        "method": "stream.create",
+        "params": {
+          "pipeline": {
+            "format": "wriven-workflow/pipeline@1",
+            "name": "Fetch",
+            "input": {
+              "type": "host_trigger"
+            },
+            "processors": [
+              {
+                "id": "fetch",
+                "type": "http_fetch",
+                "urls": [
+                  "https://a.example/feed",
+                  "https://b.example/feed"
+                ]
+              }
+            ],
+            "output": {
+              "type": "drop"
+            },
+            "limits": {
+              "llm_calls_per_run": 0,
+              "runs_per_day": 2,
+              "run_timeout": "5m"
+            }
+          }
+        }
+      }
+    },
+    {
+      "expect": {
+        "id": "h-2",
+        "result": {
+          "status": "pending_approval"
+        }
+      },
+      "capture": {
+        "stream": "/result/stream_id",
+        "hash": "/result/permissions_hash"
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "h-3",
+        "method": "stream.approve",
+        "params": {
+          "stream_id": "$stream",
+          "permissions_hash": "$hash"
+        }
+      }
+    },
+    {
+      "expect": {
+        "id": "h-3",
+        "result": {
+          "status": "active"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "h-4",
+        "method": "stream.update",
+        "params": {
+          "stream_id": "$stream",
+          "pipeline": {
+            "format": "wriven-workflow/pipeline@1",
+            "name": "Fetch",
+            "input": {
+              "type": "host_trigger"
+            },
+            "processors": [
+              {
+                "id": "fetch",
+                "type": "http_fetch",
+                "urls": [
+                  "https://a.example/feed"
+                ]
+              }
+            ],
+            "output": {
+              "type": "drop"
+            },
+            "limits": {
+              "llm_calls_per_run": 0,
+              "runs_per_day": 2,
+              "run_timeout": "5m"
+            }
+          }
+        }
+      }
+    },
+    {
+      "expect": {
+        "id": "h-4",
+        "result": {
+          "stream_id": "$stream",
+          "status": "active",
+          "permissions_hash": "<string>",
+          "rendered": "<any>"
+        }
+      }
+    },
+    {
+      "expect_absent": {
+        "id": "h-4",
+        "result": {
+          "diff": "<any>"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "h-5",
+        "method": "stream.update",
+        "params": {
+          "stream_id": "$stream",
+          "pipeline": {
+            "format": "wriven-workflow/pipeline@1",
+            "name": "Fetch",
+            "input": {
+              "type": "host_trigger"
+            },
+            "processors": [
+              {
+                "id": "fetch",
+                "type": "http_fetch",
+                "urls": [
+                  "https://a.example/feed",
+                  "https://c.example/feed"
+                ]
+              }
+            ],
+            "output": {
+              "type": "drop"
+            },
+            "limits": {
+              "llm_calls_per_run": 0,
+              "runs_per_day": 2,
+              "run_timeout": "5m"
+            }
+          }
+        }
+      }
+    },
+    {
+      "expect": {
+        "id": "h-5",
+        "result": {
+          "status": "pending_approval",
+          "permissions_hash": "<string>",
+          "diff": {
+            "added": [
+              "Fetches from: a.example, c.example (GET only, over HTTPS)."
+            ],
+            "removed": [
+              "Fetches from: a.example (GET only, over HTTPS)."
+            ]
+          }
+        }
+      },
+      "capture": {
+        "new_hash": "/result/permissions_hash"
+      }
+    },
+    {
+      "expect": {
+        "method": "stream.changed",
+        "params": {
+          "stream_id": "$stream",
+          "status": "pending_approval",
+          "reason": "permissions_widened"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "h-6",
+        "method": "run.trigger",
+        "params": {
+          "stream_id": "$stream"
+        }
+      }
+    },
+    {
+      "expect": {
+        "id": "h-6",
+        "error": {
+          "code": -32007,
+          "data": {
+            "kind": "permission_denied"
+          }
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "h-7",
+        "method": "stream.approve",
+        "params": {
+          "stream_id": "$stream",
+          "permissions_hash": "$hash"
+        }
+      }
+    },
+    {
+      "expect": {
+        "id": "h-7",
+        "error": {
+          "data": {
+            "kind": "conflict",
+            "current": "$new_hash"
+          }
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "h-8",
+        "method": "stream.approve",
+        "params": {
+          "stream_id": "$stream",
+          "permissions_hash": "$new_hash"
+        }
+      }
+    },
+    {
+      "expect": {
+        "id": "h-8",
+        "result": {
+          "status": "active"
+        }
+      }
+    },
+    {
+      "close_stdin": true
+    },
+    {
+      "expect_exit": 0,
+      "within_ms": 5000
+    }
+  ]
+}
