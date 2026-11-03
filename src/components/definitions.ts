@@ -1,7 +1,7 @@
 // The registry of components v0 knows about.
 
 import { findPlaceholders } from "../pipeline/pointer.ts";
-import { NUMBER, object, shapeWith, STRING, UNKNOWN } from "../pipeline/shape.ts";
+import { describeShape, NUMBER, object, shapeAt, shapeWith, STRING, UNKNOWN } from "../pipeline/shape.ts";
 import { hostOfUrl, urlProblem } from "../pipeline/urls.ts";
 import { POINTER_PATTERN } from "../pipeline/pointer.ts";
 import { DURATION_PATTERN, groupThousands, parseDuration } from "../pipeline/duration.ts";
@@ -168,6 +168,58 @@ const filter: ComponentDef = {
   },
 };
 
+export const SPLIT_DEFAULT_MAX = 100;
+
+const split: ComponentDef = {
+  type: "split",
+  kind: "processor",
+  summary: "Turn the array at field into one message per element, with the parent's metadata. An empty array drops the message.",
+  properties: {
+    field: pointer,
+    max_items: { type: "integer", minimum: 1, maximum: 1000 },
+  },
+  required: ["field"],
+  check(config, shape, ctx) {
+    const found = ctx.requirePointer("field", config.field, shape);
+    if (found && found.kind !== "array" && found.kind !== "unknown") {
+      ctx.error("shape_mismatch", "field", `${config.field} is ${describeShape(found)} here; split needs an array.`);
+    }
+  },
+  outputShape(config, shape) {
+    const found = shapeAt(shape, config.field);
+    return found.found && found.shape.kind === "array" ? found.shape.items : UNKNOWN;
+  },
+};
+
+const log: ComponentDef = {
+  type: "log",
+  kind: "processor",
+  summary: "Append a line per message to the run report's logs, with {{/pointer}} and {{meta:key}} placeholders; a missing value renders empty.",
+  properties: { text: { type: "string", minLength: 1, maxLength: 500 } },
+  required: ["text"],
+  preservesIds: true,
+  check(config, _shape, ctx) {
+    for (const raw of findPlaceholders(config.text).invalid) {
+      ctx.error("schema", "text", `${raw} is not a placeholder; only {{/pointer}} and {{meta:key}} exist.`);
+    }
+  },
+};
+
+export const SLEEP_RANGE_MS = { minimum: 1_000, maximum: 300_000 };
+
+const sleep: ComponentDef = {
+  type: "sleep",
+  kind: "processor",
+  summary: "Wait once per batch, from 1s to 5m. Under pipeline.test it moves the test clock instead of waiting.",
+  properties: { duration: { type: "string", pattern: DURATION_PATTERN } },
+  required: ["duration"],
+  preservesIds: true,
+  check(config, _shape, ctx) {
+    const ms = parseDuration(config.duration);
+    if (ms < SLEEP_RANGE_MS.minimum || ms > SLEEP_RANGE_MS.maximum) ctx.error("schema", "duration", "duration must be from 1s to 5m.");
+  },
+};
+
 const DEFAULT_REMEMBER = "30d";
 const DEFAULT_MAX_KEYS = 10_000;
 
@@ -298,7 +350,7 @@ const drop: ComponentDef = {
 
 export const DEDUPE_DEFAULTS = { remember: DEFAULT_REMEMBER, max_keys: DEFAULT_MAX_KEYS };
 
-export const COMPONENTS: ComponentDef[] = [hostTrigger, schedule, inject, httpFetch, parseFeed, dedupe, collect, template, hostLlm, filter, hostResult, drop];
+export const COMPONENTS: ComponentDef[] = [hostTrigger, schedule, inject, httpFetch, parseFeed, dedupe, collect, template, hostLlm, filter, split, log, sleep, hostResult, drop];
 
 export const COMPONENT_BY_TYPE = new Map(COMPONENTS.map((c) => [c.type, c]));
 

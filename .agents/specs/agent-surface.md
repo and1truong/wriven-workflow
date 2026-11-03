@@ -22,7 +22,7 @@ Names match `^[a-zA-Z0-9_-]{1,64}$` (OpenRouter's limit is the tightest of the t
 | --- | --- | --- | --- |
 | `workflow_list_components` | `components.list` | `{ "kind"?: "input" \| "processor" \| "output" }` | `{ components: [{ type, kind, summary, schema }], format: "wriven-workflow/pipeline@1", ceilings }` |
 | `workflow_validate_pipeline` | `pipeline.validate` | `{ "pipeline": object }` | `{ valid, errors[], warnings[], permission_sentences[] }` |
-| `workflow_test_pipeline` | `pipeline.test` | `{ "pipeline", "input"?, "llm"?, "fixtures"?, "network"?: "mock" \| "live", "clock"? }` | `{ status, results[], llm_requests[], warnings[], error?, steps[] }` |
+| `workflow_test_pipeline` | `pipeline.test` | `{ "pipeline", "input"?, "llm"?, "fixtures"?, "network"?: "mock" \| "live", "clock"? }` | `{ status, results[], llm_requests[], logs[], warnings[], error?, steps[] }` |
 | `workflow_create_stream` | `stream.create` | `{ "pipeline", "start_paused"?: boolean }` | `{ stream_id, status: "pending_approval", permission_sentences[] , next: "The person must approve these permissions in the host before the automation runs." }` |
 | `workflow_update_stream` | `stream.update` | `{ "stream_id", "pipeline" }` | `{ stream_id, status, permission_sentences[], diff?: { added[], removed[] } }` |
 | `workflow_pause_stream` | `stream.pause` | `{ "stream_id" }` | `{ stream_id, status }` |
@@ -84,7 +84,7 @@ The model never sees `permissions_hash`; the host keeps it from the create/updat
 
 The result is a run report with `trigger: "test"`, plus `results[]` (what would have gone to `host.result`) and `llm_requests[]` (prompts the host would have received). Tests never write state and never call the real host for `host.llm` or `host.result`.
 
-**Embedded tests.** A pipeline may carry `tests: [{ name, input?, llm?, fixtures?, network?, clock?, state?, expect: { status, results_count?, result_body_contains?: [string], warnings_count?, error_kind? } }]`. `wriven-workflow test <file>` and `pipeline.test` with `{ "run_embedded": true }` run them all and return `{ status: "passed" | "failed", passed, failed, tests: [{ name, passed, failures[], status }] }`. The assertion vocabulary is deliberately small; it is what an agent can write without a language, modelled on Redpanda Connect's `output_batches` conditions ([research](../research/research-benthos.md) §7).
+**Embedded tests.** A pipeline may carry `tests: [{ name, input?, llm?, fixtures?, network?, clock?, state?, expect: { status, results_count?, result_body_contains?: [string], warnings_count?, error_kind?, logs_contain?: [string] } }]`. `wriven-workflow test <file>` and `pipeline.test` with `{ "run_embedded": true }` run them all and return `{ status: "passed" | "failed", passed, failed, tests: [{ name, passed, failures[], status }] }`. The assertion vocabulary is deliberately small; it is what an agent can write without a language, modelled on Redpanda Connect's `output_batches` conditions ([research](../research/research-benthos.md) §7).
 
 ## Result truncation
 

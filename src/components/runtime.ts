@@ -6,7 +6,7 @@ import { RpcError } from "../protocol/errors.ts";
 import { StepError, type Message } from "../executor/messages.ts";
 import { httpFetch, type Fetcher } from "./http-fetch.ts";
 import { parseFeed } from "./parse-feed.ts";
-import { DEDUPE_DEFAULTS } from "./definitions.ts";
+import { DEDUPE_DEFAULTS, SPLIT_DEFAULT_MAX } from "./definitions.ts";
 import { evaluate } from "../pipeline/condition.ts";
 import type { RunState } from "../executor/run-state.ts";
 
@@ -28,6 +28,10 @@ export interface StepContext {
   stateTouched(): void;
   llm(request: { step_id: string; message_id: string; system?: string; messages: Array<{ role: "user"; content: string }>; max_output_tokens?: number }): Promise<any>;
   result(request: { message_id: string; result: { title: string; body: string; format: string } }): Promise<any>;
+  // Appends a line to the run report's logs.
+  log(messageId: string, text: string): void;
+  // Waits, or under pipeline.test moves the run's clock instead. Cancellation interrupts it.
+  sleep(ms: number): Promise<void>;
 }
 
 export type Processor = (config: any, batch: Message[], ctx: StepContext) => Promise<Message[]>;
@@ -47,28 +51,29 @@ function write(message: Message, pointer: string, value: unknown): void {
 
 const PLACEHOLDER = /\{\{([^{}]*)\}\}/g;
 
+// One pass over the template, so text from a fetched page that looks like a placeholder stays text.
+function renderText(text: string, message: Message, missing: "error" | "empty"): string {
+  return text.replace(PLACEHOLDER, (raw) => {
+    const [placeholder] = findPlaceholders(raw).placeholders;
+    if (!placeholder) return raw;
+    if (placeholder.meta !== undefined) {
+      const meta = Object.hasOwn(message.meta, placeholder.meta) ? message.meta[placeholder.meta] : undefined;
+      if (meta === undefined && missing !== "empty") {
+        throw new StepError("unresolved_pointer", `The metadata key ${placeholder.meta} does not exist in message ${message.id}.`, { message_id: message.id });
+      }
+      return meta ?? "";
+    }
+    const found = pointerGet(message.data, placeholder.pointer!);
+    if (!found.found) {
+      if (missing === "empty") return "";
+      throw new StepError("unresolved_pointer", `${placeholder.pointer} does not exist in message ${message.id}.`, { message_id: message.id });
+    }
+    return typeof found.value === "string" ? found.value : JSON.stringify(found.value);
+  });
+}
+
 const template: Processor = async (config, batch) => {
-  for (const message of batch) {
-    // One pass over the template, so text from a fetched page that looks like a placeholder stays text.
-    const text = (config.text as string).replace(PLACEHOLDER, (raw) => {
-      const [placeholder] = findPlaceholders(raw).placeholders;
-      if (!placeholder) return raw;
-      if (placeholder.meta !== undefined) {
-        const meta = Object.hasOwn(message.meta, placeholder.meta) ? message.meta[placeholder.meta] : undefined;
-        if (meta === undefined && config.missing !== "empty") {
-          throw new StepError("unresolved_pointer", `The metadata key ${placeholder.meta} does not exist in message ${message.id}.`, { message_id: message.id });
-        }
-        return meta ?? "";
-      }
-      const found = pointerGet(message.data, placeholder.pointer!);
-      if (!found.found) {
-        if (config.missing === "empty") return "";
-        throw new StepError("unresolved_pointer", `${placeholder.pointer} does not exist in message ${message.id}.`, { message_id: message.id });
-      }
-      return typeof found.value === "string" ? found.value : JSON.stringify(found.value);
-    });
-    write(message, config.target, text);
-  }
+  for (const message of batch) write(message, config.target, renderText(config.text, message, config.missing ?? "error"));
   return batch;
 };
 
@@ -118,9 +123,32 @@ const collect: Processor = async (config, batch, ctx) => {
   return [{ id: `${first?.id ?? ctx.stepId}.c`, data: { items: kept.map((m) => m.data), count: kept.length }, meta: { ...first?.meta } }];
 };
 
+const split: Processor = async (config, batch, ctx) => {
+  const max = config.max_items ?? SPLIT_DEFAULT_MAX;
+  const out: Message[] = [];
+  for (const message of batch) {
+    const found = pointerGet(message.data, config.field);
+    if (!found.found) throw new StepError("unresolved_pointer", `${config.field} does not exist in message ${message.id}.`, { message_id: message.id });
+    if (!Array.isArray(found.value)) throw new StepError("shape_mismatch", `split needs an array, but ${config.field} is not one in message ${message.id}.`, { message_id: message.id });
+    if (found.value.length > max) ctx.warn(message.id, "split_truncated", `${found.value.length} items arrived; only the first ${max} were kept.`);
+    found.value.slice(0, max).forEach((item, i) => out.push({ id: `${message.id}.${i}`, data: structuredClone(item), meta: { ...message.meta } }));
+  }
+  return out;
+};
+
+const log: Processor = async (config, batch, ctx) => {
+  for (const message of batch) ctx.log(message.id, renderText(config.text, message, "empty"));
+  return batch;
+};
+
+const sleep: Processor = async (config, batch, ctx) => {
+  await ctx.sleep(parseDuration(config.duration));
+  return batch;
+};
+
 const filter: Processor = async (config, batch, ctx) => batch.filter((message) => evaluate(config.keep_if, message, ctx.now()));
 
-const PROCESSORS: Record<string, Processor> = { http_fetch: httpFetch, parse_feed: parseFeed, dedupe, collect, template, host_llm: hostLlm, filter };
+const PROCESSORS: Record<string, Processor> = { http_fetch: httpFetch, parse_feed: parseFeed, dedupe, collect, template, host_llm: hostLlm, filter, split, log, sleep };
 
 export function processorFor(type: string): Processor {
   const processor = PROCESSORS[type];

@@ -12,6 +12,7 @@ export interface ExecutorWorld {
   llm: StepContext["llm"];
   result: StepContext["result"];
   warn(warning: { step_id: string; message_id: string | null; code: string; message: string }): void;
+  log(entry: { step_id: string; message_id: string; text: string }): void;
   fetcher: Fetcher | null;
   network(host: string, bytes: number): void;
   denied(host: string): void;
@@ -31,7 +32,9 @@ function inputMessages(init: RunInit): Message[] {
 export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunOutcome> {
   const startedAt = Date.now();
   const clockStart = init.clock ? Date.parse(init.clock) : null;
-  const now = () => new Date(clockStart === null ? Date.now() : clockStart + (Date.now() - startedAt));
+  // What `sleep` skipped under pipeline.test, so the run's clock still moves by it.
+  let slept = 0;
+  const now = () => new Date((clockStart === null ? Date.now() : clockStart + (Date.now() - startedAt)) + slept);
   let stepId = "input";
   let state: RunState;
   let touched = false;
@@ -45,6 +48,11 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
       touched = true;
     },
     warn: (messageId, code, message) => world.warn({ step_id: id, message_id: messageId, code, message }),
+    log: (messageId, text) => world.log({ step_id: id, message_id: messageId, text }),
+    sleep: async (ms) => {
+      if (init.trigger === "test") slept += ms;
+      else await abortableSleep(ms, world.signal);
+    },
     llm: world.llm,
     result: world.result,
     fetcher: world.fetcher,
@@ -79,6 +87,21 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
   } catch (err) {
     return { status: cancelledBy(err, world.signal) ? "cancelled" : "failed", error: describe(err, stepId), state: noState };
   }
+}
+
+function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const cancelled = () => {
+      clearTimeout(timer);
+      reject(new StepError("cancelled", "The run was cancelled."));
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", cancelled);
+      resolve();
+    }, ms);
+    if (signal.aborted) cancelled();
+    else signal.addEventListener("abort", cancelled, { once: true });
+  });
 }
 
 function throwIfCancelled(signal: AbortSignal): void {

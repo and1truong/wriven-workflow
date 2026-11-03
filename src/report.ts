@@ -21,6 +21,12 @@ export interface ReportWarning {
   message: string;
 }
 
+export interface ReportLog {
+  step_id: string;
+  message_id: string;
+  text: string;
+}
+
 export interface ReportStep {
   step_id: string;
   in: number;
@@ -45,6 +51,8 @@ export interface RunReport {
   error: ReportError | null;
   warnings: ReportWarning[];
   steps: ReportStep[];
+  // Lines from `log` steps; present only when there are some.
+  logs?: ReportLog[];
   llm: {
     calls: number;
     input_tokens: number;
@@ -105,6 +113,14 @@ export const REPORT_SCHEMA: JsonSchema = {
         type: "object",
         required: ["step_id", "in", "out", "dropped", "duration_ms"],
         properties: { step_id: { type: "string" }, in: { type: "integer" }, out: { type: "integer" }, dropped: { type: "integer" }, duration_ms: { type: "number" } },
+      },
+    },
+    logs: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["step_id", "message_id", "text"],
+        properties: { step_id: { type: "string" }, message_id: { type: "string" }, text: { type: "string" } },
       },
     },
     llm: {

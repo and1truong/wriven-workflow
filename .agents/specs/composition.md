@@ -187,7 +187,7 @@ Each branch builds a child message per parent message and runs its steps on the 
 
 `{ "id", "type": "log", "text": "Kept {{/title}}" }`.
 
-- Appends `{ step, message_id, text }` to a new `logs` array in the run report for each message passing through.
+- Appends `{ step_id, message_id, text }` to a new `logs` array in the run report for each message passing through.
 - `text` is at most 500 characters, with the same placeholders as `template` and `missing: "empty"` always on, because a log line must never fail a run.
 - At most 100 entries per run. After that, one warning `logs_truncated` and no more entries.
 - `pipeline.test` returns `logs` too. This is the agent's `print`.

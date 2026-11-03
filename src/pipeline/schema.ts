@@ -45,6 +45,7 @@ const TEST_SCHEMA: JsonSchema = {
         result_body_contains: { type: "array", items: { type: "string" } },
         warnings_count: { type: "integer", minimum: 0 },
         error_kind: { type: "string" },
+        logs_contain: { type: "array", items: { type: "string" } },
       },
     },
   },

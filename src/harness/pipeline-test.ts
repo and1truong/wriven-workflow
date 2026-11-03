@@ -29,6 +29,7 @@ export interface TestOutcome {
   report: RunReport;
   results: Array<{ title: string; body: string; format: string }>;
   llm_requests: Array<{ step_id: string; message_id: string; system?: string; prompt: string }>;
+  logs: NonNullable<RunReport["logs"]>;
 }
 
 function checkParams(params: TestParams): void {
@@ -97,7 +98,7 @@ export async function runPipelineTest(params: TestParams, env: SupervisorEnv, si
   try {
     const report = await process.run();
     if (signal.aborted) throw new RpcError("cancelled", "The test was cancelled.", { reason: "cancelled" });
-    return truncateResult({ status: report.status, report, results, llm_requests: llmRequests }, MAX_TEST_RESULT_BYTES);
+    return truncateResult({ status: report.status, report, results, llm_requests: llmRequests, logs: report.logs ?? [] }, MAX_TEST_RESULT_BYTES);
   } finally {
     signal.removeEventListener("abort", onAbort);
     track(process, false);
@@ -118,6 +119,7 @@ export interface EmbeddedTest {
     result_body_contains?: string[];
     warnings_count?: number;
     error_kind?: string;
+    logs_contain?: string[];
   };
 }
 
@@ -129,6 +131,9 @@ export function checkExpectations(outcome: TestOutcome, expect: EmbeddedTest["ex
   if (expect.results_count !== undefined && results.length !== expect.results_count) failures.push(`${results.length} results, expected ${expect.results_count}`);
   if (expect.warnings_count !== undefined && report.warnings.length !== expect.warnings_count) failures.push(`${report.warnings.length} warnings, expected ${expect.warnings_count}`);
   if (expect.error_kind !== undefined && report.error?.kind !== expect.error_kind) failures.push(`error kind is ${report.error?.kind ?? "none"}, expected ${expect.error_kind}`);
+  for (const text of expect.logs_contain ?? []) {
+    if (!(report.logs ?? []).some((l) => l.text.includes(text))) failures.push(`no log line contains ${JSON.stringify(text)}`);
+  }
   for (const text of expect.result_body_contains ?? []) {
     if (!results.some((r) => typeof r.body === "string" && r.body.includes(text))) failures.push(`no result body contains ${JSON.stringify(text)}`);
   }

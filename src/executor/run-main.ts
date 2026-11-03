@@ -50,6 +50,7 @@ export async function runMain(): Promise<void> {
         llm: (request) => peer.request("host.llm", request).promise,
         result: (request) => peer.request("host.result", request).promise,
         warn: (warning) => peer.notify("warning", warning),
+        log: (entry) => peer.notify("log", entry),
         stepStarted: (stepId) => peer.notify("step.started", { step_id: stepId }),
         stepFinished: (step) => peer.notify("step.finished", step),
       });

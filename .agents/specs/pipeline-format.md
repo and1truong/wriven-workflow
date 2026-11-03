@@ -95,6 +95,9 @@ Each component states: config fields, what it reads and emits, how it behaves on
 Specified in [composition](composition.md), which owns their behaviour; this list records which ones the engine has.
 
 - **`filter`**: keeps the messages for which `keep_if`, a [`condition`](composition.md#condition), is true. Permission: none.
+- **`split`**: one message per element of the array at `field`. Permission: none.
+- **`log`**: appends a line per message to the run report's `logs`. Permission: none.
+- **`sleep`**: waits once per batch, 1s to 5m; validation code `sleep_exceeds_timeout` when sleeps along one path reach `run_timeout`. Permission: none.
 
 ### Outputs
 
@@ -124,7 +127,7 @@ Engine-wide ceilings (the upper ends above) are compiled in and reported by `com
 
 ## Validation
 
-`pipeline.validate` returns either `{ "valid": true, "permissions": {...}, "warnings": [...] }` or `{ "valid": false, "errors": [ { "path": "/processors/2/key", "code": "unknown_field" | "schema" | "unresolved_pointer" | "limit_out_of_range" | "missing_limits" | "input_not_allowed" | "schedule_requires_engine_clock" | "url_not_allowed" | "shape_mismatch" | "capability_missing", "message": "English sentence" } ] }`.
+`pipeline.validate` returns either `{ "valid": true, "permissions": {...}, "warnings": [...] }` or `{ "valid": false, "errors": [ { "path": "/processors/2/key", "code": "unknown_field" | "schema" | "unresolved_pointer" | "limit_out_of_range" | "missing_limits" | "input_not_allowed" | "schedule_requires_engine_clock" | "url_not_allowed" | "shape_mismatch" | "capability_missing" | "sleep_exceeds_timeout", "message": "English sentence" } ] }`.
 
 Checks, in order: JSON Schema of the format version; component schemas; component ordering constraints (`parse_feed` needs a `/body` upstream; `host_llm.prompt` must point at a string-producing field; `collect` after `dedupe` is allowed, before is a warning "dedupe after collect sees one key per batch"); URL rules; pointer resolution against declared shapes; limits; components the host's `capabilities` rule out (`capability_missing`); a `host_llm` present with `llm_calls_per_run: 0` is an error. Warnings never block.
 

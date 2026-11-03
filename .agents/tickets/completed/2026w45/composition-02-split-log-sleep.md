@@ -1,6 +1,6 @@
 # composition-02: leaf components `split`, `log`, `sleep`
 
-**Spec:** [composition](../specs/composition.md#split) (`split`, `log`, `sleep`, run report, test harness), [agent-surface](../specs/agent-surface.md#pipeline-tests).
+**Spec:** [composition](../../../specs/composition.md#split) (`split`, `log`, `sleep`, run report, test harness), [agent-surface](../../../specs/agent-surface.md#pipeline-tests).
 
 **To build:**
 - **`split`.**
@@ -20,8 +20,8 @@
   - Validation `sleep_exceeds_timeout`: the sum of sleeps along the top-level path must be below `run_timeout`. Loops multiply this sum later, in composition-08.
 - **Spec updates.**
   - Report schema: `logs`.
-  - [agent-surface](../specs/agent-surface.md): `logs`, `logs_contain`.
-  - [pipeline-format](../specs/pipeline-format.md): the three components and `sleep_exceeds_timeout`.
+  - [agent-surface](../../../specs/agent-surface.md): `logs`, `logs_contain`.
+  - [pipeline-format](../../../specs/pipeline-format.md): the three components and `sleep_exceeds_timeout`.
 - None of the three contributes a permission.
 
 **Blocked by:** nothing; can run in parallel with composition-01.
@@ -42,9 +42,11 @@
   - `run.cancel` during a real sleep finishes `cancelled` within 1 s.
 - **Regression:** v0 example hashes are unchanged.
 
-**Status:** open
+**Status:** done 2026-11-03
 
-- [ ] `split`
-- [ ] `log`, report `logs`, harness `logs` and `logs_contain`
-- [ ] `sleep`, fake-clock advance, `sleep_exceeds_timeout`
-- [ ] Specs updated (report, agent-surface, pipeline-format)
+- [x] `split`
+- [x] `log`, report `logs`, harness `logs` and `logs_contain`
+- [x] `sleep`, fake-clock advance, `sleep_exceeds_timeout`
+- [x] Specs updated (report in host-protocol, agent-surface, pipeline-format)
+
+Tests: `tests/leaf-components.test.ts`. The report's `logs` field is present only when a run logged something, so v0 reports are unchanged.

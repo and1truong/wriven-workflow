@@ -15,13 +15,14 @@ import type { Permissions } from "../pipeline/permissions.ts";
 import { startProxy, type ProxyOptions, type RunProxy } from "./proxy.ts";
 import { generateProfile, programPaths } from "./seatbelt.ts";
 import type { RunInit, RunOutcome } from "../executor/messages.ts";
-import type { ReportError, ReportStep, ReportWarning, RunReport, RunTrigger } from "../report.ts";
+import type { ReportError, ReportLog, ReportStep, ReportWarning, RunReport, RunTrigger } from "../report.ts";
 
 export const CANCEL_GRACE_MS = 5000;
 // What a run can make the engine hold, or put in a report. The run process is not trusted to be modest.
 const MAX_WARNINGS = 200;
 const MAX_TEXT_CHARS = 1000;
 const MAX_HOSTS = 200;
+const MAX_LOGS = 100;
 // RLIMIT_CPU, generous enough that a healthy run on many threads never meets it: the wall-clock timeout
 // is the real limit, this is for a process that nobody is left to kill.
 const CPU_LIMIT_FACTOR = 4;
@@ -89,6 +90,7 @@ export class RunProcess {
   private peer!: Peer;
   private readonly steps: ReportStep[] = [];
   private readonly warnings: ReportWarning[] = [];
+  private readonly logs: ReportLog[] = [];
   private readonly llmRequests: RunReport["llm"]["requests"] = [];
   private readonly results: RunReport["results"] = [];
   private readonly outstanding = new Set<string>();
@@ -113,6 +115,7 @@ export class RunProcess {
   private readonly networkDenied = new Set<string>();
   private spawnFailure: string | null = null;
   private warningsOmitted = 0;
+  private logsTruncated = false;
   // The run answered or died; what remains is waiting for the process to be gone.
   private finishing = false;
 
@@ -277,6 +280,9 @@ export class RunProcess {
     } else if (method === "warning") {
       if (this.warnings.length >= MAX_WARNINGS) this.warningsOmitted++;
       else this.warnings.push({ step_id: bounded(params.step_id), message_id: params.message_id === null ? null : bounded(params.message_id), code: bounded(params.code), message: bounded(params.message) });
+    } else if (method === "log") {
+      if (this.logs.length < MAX_LOGS) this.logs.push({ step_id: bounded(params.step_id), message_id: bounded(params.message_id), text: bounded(params.text) });
+      else this.logsTruncated = true;
     } else if (method === "network") {
       this.networkRequests++;
       this.networkBytes += Number(params.bytes) || 0;
@@ -438,11 +444,13 @@ export class RunProcess {
       finished_at: this.env.now().toISOString(),
       status,
       error,
-      warnings:
-        this.warningsOmitted > 0
-          ? [...this.warnings, { step_id: "report", message_id: null, code: "warnings_omitted", message: `${this.warningsOmitted} more warnings were left out.` }]
-          : this.warnings,
+      warnings: [
+        ...this.warnings,
+        ...(this.warningsOmitted > 0 ? [{ step_id: "report", message_id: null, code: "warnings_omitted", message: `${this.warningsOmitted} more warnings were left out.` }] : []),
+        ...(this.logsTruncated ? [{ step_id: "report", message_id: null, code: "logs_truncated", message: `Only the first ${MAX_LOGS} log lines were kept.` }] : []),
+      ],
       steps: this.steps,
+      ...(this.logs.length > 0 ? { logs: this.logs } : {}),
       llm: { calls: this.llmCalls, input_tokens: this.inputTokens, output_tokens: this.outputTokens, cost_usd: this.cost, requests: this.llmRequests },
       network: {
         requests: this.networkRequests,

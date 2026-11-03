@@ -86,6 +86,7 @@ export function validatePipeline(document: unknown, ctx: ValidationContext): Val
   if (errors.length > 0) return failed();
 
   checkTopLevelSchedule(pipeline, errors);
+  checkSleeps(pipeline, errors);
   if (errors.length > 0) return failed();
 
   const types: string[] = pipeline.processors.map((p: any) => p.type);
@@ -138,6 +139,19 @@ function checkEnvironment(pipeline: any, ctx: ValidationContext, errors: Pipelin
   if (pipeline.output.type === "host_result" && !ctx.capabilities.results) {
     errors.push({ path: "/output/type", code: "capability_missing", message: "This host does not accept results, so host_result cannot be used." });
   }
+}
+
+// Sleeps along one path must leave the run time to finish: a pipeline that cannot is invalid, not slow.
+function checkSleeps(pipeline: any, errors: PipelineIssue[]): void {
+  const timeout = parseDuration(pipeline.limits.run_timeout);
+  let total = 0;
+  pipeline.processors.forEach((p: any, i: number) => {
+    if (p.type !== "sleep") return;
+    total += parseDuration(p.duration);
+    if (total >= timeout && total - parseDuration(p.duration) < timeout) {
+      errors.push({ path: `/processors/${i}/duration`, code: "sleep_exceeds_timeout", message: `Sleeps along this path add up to ${Math.round(total / 1000)}s, which is not below run_timeout ${pipeline.limits.run_timeout}.` });
+    }
+  });
 }
 
 function checkLimits(limits: any, ceilings: Ceilings, errors: PipelineIssue[]): void {
