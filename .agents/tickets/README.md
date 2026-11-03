@@ -2,7 +2,7 @@
 
 Vertical slices for v0, in dependency order. Each is a tracer bullet: it crosses every layer it needs and is demonstrable on its own against the fake host. Blockers are listed in each ticket; the chain below is the intended order, with 09 and 10 able to run in parallel with 04–07 once 03 is done. Finished tickets move to `completed/YYYYwNN/`.
 
-All derive from the [specs](../specs/README.md). Engine-01 to engine-11 are done; engine-12 is built and waits for Hong's review of `docs/host-integration.md`.
+All derive from the [specs](../specs/README.md). All twelve are done and live under `completed/`.
 
 ## Engine v0
 
@@ -17,4 +17,4 @@ All derive from the [specs](../specs/README.md). Engine-01 to engine-11 are done
 9. [engine-09-scheduler-engine-clock](completed/2026w45/engine-09-scheduler-engine-clock.md) — `schedule` input, cron and DST, missed-run policy, `schedule.preview`. Parallel with 04–08 after 03.
 10. [engine-10-limits-runs-per-day-cost](completed/2026w45/engine-10-limits-runs-per-day-cost.md) — `runs_per_day`, cost cap, host ceilings, `skipped`. Parallel with 04–08 after 03.
 11. [engine-11-packaging-release](completed/2026w45/engine-11-packaging-release.md) — both architectures, signing, checksums, notices, release notes.
-12. [engine-12-conformance-fixtures-host-kit](engine-12-conformance-fixtures-host-kit.md) — all ten fixtures, schema-subset test, remaining threat-model tests, `docs/host-integration.md` for the Wriven implementer.
+12. [engine-12-conformance-fixtures-host-kit](completed/2026w45/engine-12-conformance-fixtures-host-kit.md) — all ten fixtures, schema-subset test, remaining threat-model tests, `docs/host-integration.md` for the Wriven implementer.

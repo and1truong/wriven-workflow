@@ -13,7 +13,6 @@ Two lists. The first is what Hong decides for this repository. The second is wha
 8. **Returning the pipeline to the model.** Whether `workflow_get_stream` returns the full pipeline or only sentences. Current answer: full pipeline. ([agent-surface](specs/agent-surface.md#open-points))
 9. **Registry publication.** GitHub releases only, or also npm/JSR. Not needed for Wriven. ([packaging-and-release](specs/packaging-and-release.md#open-points))
 
-10. **Review `docs/host-integration.md`** against the Wriven inbox's preconditions: the last step of engine-12. ([host integration](../docs/host-integration.md))
 11. **Developer tooling.** Bun is pinned at 1.4.3, what this machine has, and its test runner names itself `1.4.3-canary.1`. x64 builds have never been executed here because Rosetta is not installed. Decide whether to upgrade Bun and install Rosetta before a first release. ([packaging-and-release](specs/packaging-and-release.md))
 
 ## For the Wriven side (preconditions for integration)
