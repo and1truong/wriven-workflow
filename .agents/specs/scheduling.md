@@ -42,7 +42,7 @@ With `clock: host`, all of this is the host's job, and the sentences come from t
 
 - `stream.pause`: the scheduler drops the stream from its timer set. `last_handled` is frozen.
 - `stream.resume`: `last_handled` is set to `now`, so nothing that passed while paused is made up. Next occurrence is computed from `now`. The response carries `next_run`.
-- `stream.update` that changes `cron`, `timezone` or `missed` always re-approves ([permissions](permissions.md#pinning-and-comparison)); on approval `last_handled = now`.
+- `stream.update` that changes `cron`, `timezone` or `missed` always re-approves ([permissions](permissions.md#pinning-and-comparison)); on approval `last_handled = now`. Any approval into `active` does this, since a stream waiting for approval could not run; what passed meanwhile is not made up.
 - `stream.delete`: removed from the timer set; a running run of the stream is cancelled.
 - Engine restart (host restarted): the scheduler reads every `active` manifest, applies the missed-run policy per stream against the persisted `last_handled`, and resumes timers.
 
@@ -60,7 +60,7 @@ With `clock: host`, all of this is the host's job, and the sentences come from t
 
 ## Risks
 
-- Time-zone database staleness inside a compiled binary: Bun embeds the ICU data of its build. A rule change in some zone after release would make occurrences wrong there until the engine is rebuilt. Acceptable for v0; documented in [packaging-and-release](packaging-and-release.md).
+- Time-zone database staleness: which zone data `Intl` uses depends on the runtime. The earlier note here said Bun embeds ICU in the binary; on macOS 27 with Bun 1.4.3 `Intl` failed once `/usr/share/icu` was denied by the sandbox (measured 2026-11-03), which suggests it reads system data, and zone rules would then follow the OS rather than the release. Whether that is the whole story is not verified. Either way zone arithmetic runs only in the engine process, never under the run sandbox.
 - Wall-clock arithmetic has many edge cases; the test suite must be table-driven with transition days for at least `Australia/Sydney`, `Europe/London`, `America/New_York` and a zone without DST (`Australia/Brisbane`), plus `UTC`.
 
 ## Acceptance criteria

@@ -14,7 +14,7 @@ All derive from the [specs](../specs/README.md); none is started.
 6. [engine-06-parse-feed-dedupe-collect](completed/2026w45/engine-06-parse-feed-dedupe-collect.md) — `parse_feed`, `dedupe` with commit-on-success, `collect`; **the feed-digest example runs end to end**; worked-example sentences byte-exact.
 7. [engine-07-approval-update-diff](completed/2026w45/engine-07-approval-update-diff.md) — approve with hash, subset rule on update, diff, rollback. Fixture 6.
 8. [engine-08-pipeline-test-harness-inject](completed/2026w45/engine-08-pipeline-test-harness-inject.md) — `pipeline.test` with injected input, mocked LLM, fixtures, fake clock; embedded tests; CLI `test`.
-9. [engine-09-scheduler-engine-clock](engine-09-scheduler-engine-clock.md) — `schedule` input, cron and DST, missed-run policy, `schedule.preview`. Parallel with 04–08 after 03.
+9. [engine-09-scheduler-engine-clock](completed/2026w45/engine-09-scheduler-engine-clock.md) — `schedule` input, cron and DST, missed-run policy, `schedule.preview`. Parallel with 04–08 after 03.
 10. [engine-10-limits-runs-per-day-cost](engine-10-limits-runs-per-day-cost.md) — `runs_per_day`, cost cap, host ceilings, `skipped`. Parallel with 04–08 after 03.
 11. [engine-11-packaging-release](engine-11-packaging-release.md) — both architectures, signing, checksums, notices, release notes.
 12. [engine-12-conformance-fixtures-host-kit](engine-12-conformance-fixtures-host-kit.md) — all ten fixtures, schema-subset test, remaining threat-model tests, `docs/host-integration.md` for the Wriven implementer.

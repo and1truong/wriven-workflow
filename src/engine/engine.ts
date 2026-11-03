@@ -20,6 +20,10 @@ import { ENGINE_NAME, ENGINE_VERSION, PIPELINE_FORMATS, PROTOCOL_VERSIONS, REPOR
 import { checkExpectations, runPipelineTest, type EmbeddedTest, type TestParams } from "../harness/pipeline-test.ts";
 import type { RunProcess } from "../supervisor/supervisor.ts";
 import { HOST_TOOLS_SUGGESTED, TOOLS, withToolResult } from "../tools/tools.ts";
+import { parseCron } from "../scheduler/cron.ts";
+import { nextOccurrences } from "../scheduler/occurrences.ts";
+import { Scheduler } from "../scheduler/scheduler.ts";
+import { isValidZone, toRfc3339 } from "../scheduler/zone.ts";
 import { tryLock } from "./lock.ts";
 import { RunQueue } from "./run-queue.ts";
 import { probeSandbox, type SandboxStatus } from "../supervisor/seatbelt.ts";
@@ -36,7 +40,7 @@ export interface EngineOptions {
   // Argv prefix that re-executes the binary; tests running in-process point it at the compiled one.
   command?: string[];
   // Only tests in this repository set these.
-  test?: SupervisorEnv["test"] & { memorySampleMs?: number };
+  test?: SupervisorEnv["test"] & { memorySampleMs?: number; noSchedulerTimer?: boolean };
 }
 
 export class Engine {
@@ -51,6 +55,7 @@ export class Engine {
   private queue!: RunQueue;
   private readonly now: () => Date;
   private supervisorEnv!: SupervisorEnv;
+  private scheduler: Scheduler | null = null;
   private liveNetworkInTests = false;
   private readonly activeTests = new Set<RunProcess>();
 
@@ -62,6 +67,11 @@ export class Engine {
       onLine: options.onLine,
       onRequest: (method, params, ctx) => this.dispatch(method, params, ctx),
     });
+  }
+
+  // Runs the scheduler now, for tests on a fake clock.
+  tickScheduler(): void {
+    this.scheduler?.tick();
   }
 
   log(level: LogLevel, msg: string, fields: Record<string, unknown> = {}): void {
@@ -109,6 +119,8 @@ export class Engine {
         return { streams: this.streams.all().map((m) => this.streamRow(m)) };
       case "stream.get":
         return this.getStream(params);
+      case "schedule.preview":
+        return previewSchedule(params);
       case "run.trigger":
         return this.triggerRun(params);
       case "run.cancel":
@@ -176,6 +188,14 @@ export class Engine {
       },
     };
     this.queue = new RunQueue({ ...this.supervisorEnv, emitFinished: (report) => this.peer.notify("run.finished", { report }) });
+    if (params.clock === "engine") {
+      this.scheduler = new Scheduler({
+        now: this.now,
+        streams: this.streams,
+        enqueue: (manifest, scheduledFor) => this.queue.enqueue(manifest, { trigger: "schedule", scheduled_for: scheduledFor, collapsible: false }),
+      });
+      if (!this.options.test?.noSchedulerTimer) this.scheduler.start();
+    }
     this.initialized = true;
     return {
       protocol_version: params.protocol_version,
@@ -316,6 +336,7 @@ export class Engine {
     } else {
       updated = this.save(manifest, { status: manifest.start_paused ? "paused" : "active", pinned: pinnedOf(manifest) });
     }
+    if (updated.status === "active") this.scheduler?.markActivated(updated);
     return { stream_id: updated.stream_id, status: updated.status };
   }
 
@@ -385,7 +406,8 @@ export class Engine {
       throw new RpcError("conflict", "A stream waiting for approval cannot be resumed.", { reason: "pending_approval" });
     }
     const updated = manifest.status === "active" ? manifest : this.save(manifest, { status: "active" });
-    return { stream_id: updated.stream_id, status: "active", next_run: null };
+    if (manifest.status !== "active") this.scheduler?.markActivated(updated);
+    return { stream_id: updated.stream_id, status: "active", next_run: this.scheduler?.nextRun(updated) ?? null };
   }
 
   private async deleteStream(params: any): Promise<unknown> {
@@ -410,7 +432,7 @@ export class Engine {
       ...(m.pending ? { pending: { pipeline: m.pending.pipeline, permissions: m.pending.permissions, permissions_hash: m.pending.permissions_hash, rendered: m.pending.rendered } } : {}),
       created_at: m.created_at,
       updated_at: m.updated_at,
-      next_run: null,
+      next_run: this.scheduler?.nextRun(m) ?? null,
     };
   }
 
@@ -420,7 +442,7 @@ export class Engine {
       name: m.name,
       status: m.status,
       permissions_hash: m.pending?.permissions_hash ?? m.permissions_hash,
-      next_run: null,
+      next_run: this.scheduler?.nextRun(m) ?? null,
       permission_sentences: m.pending?.rendered ?? m.rendered,
     };
   }
@@ -451,6 +473,7 @@ export class Engine {
 
   private stop(timeoutMs: number): Promise<void> {
     this.stopping ??= (async () => {
+      this.scheduler?.stop();
       for (const test of this.activeTests) test.cancel("shutdown");
       await this.queue?.drain(timeoutMs);
       this.releaseLock?.();
@@ -458,6 +481,22 @@ export class Engine {
     })();
     return this.stopping;
   }
+}
+
+function previewSchedule(params: any): unknown {
+  const invalid = (message: string) => new RpcError("invalid_params", message, { reason: "invalid_schedule" });
+  let cron;
+  try {
+    cron = parseCron(String(params?.cron));
+  } catch (err) {
+    throw invalid((err as Error).message);
+  }
+  if (typeof params.timezone !== "string" || !isValidZone(params.timezone)) throw invalid(`${params.timezone} is not an IANA time zone name.`);
+  const after = Date.parse(params.after);
+  if (Number.isNaN(after)) throw invalid("after must be an RFC 3339 instant.");
+  const count = params.count ?? 5;
+  if (!Number.isInteger(count) || count < 1 || count > 100) throw invalid("count must be between 1 and 100.");
+  return { occurrences: nextOccurrences(cron, params.timezone, after, count).map((t) => toRfc3339(t, params.timezone)) };
 }
 
 function pinnedOf(p: PinnedPipeline): NonNullable<Manifest["pinned"]> {

@@ -71,7 +71,7 @@ In every case the host should run `wriven-workflow --version` and compare protoc
 
 - Bun's compiled binary is "way too big" by its own docs; 60 MB inside a chat app is noticeable. Acceptable for v0; `--bytecode` did not shrink the hello world and is not used until measured on the real engine.
 - Notarization needs a paid Apple developer account. Until then the engine is developer-only.
-- Embedded ICU/time-zone data ages with the release ([scheduling](scheduling.md#risks)).
+- Where the time-zone data comes from is not settled ([scheduling](scheduling.md#risks)).
 - A universal (fat) binary via `lipo` is untested; two archives are shipped instead.
 
 ## Acceptance criteria

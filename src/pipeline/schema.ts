@@ -61,7 +61,12 @@ export const TOP_LEVEL_SCHEMA: JsonSchema = {
     processors: { type: "array", items: { type: "object" } },
     output: { type: "object" },
     limits: LIMITS_SCHEMA,
-    schedule: { type: "object" },
+    schedule: {
+      type: "object",
+      additionalProperties: false,
+      required: ["cron", "timezone"],
+      properties: { cron: { type: "string" }, timezone: { type: "string" }, missed: { enum: ["skip", "run_once", "run_all"] } },
+    },
     tests: { type: "array", items: TEST_SCHEMA },
   },
 };

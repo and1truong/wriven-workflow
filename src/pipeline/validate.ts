@@ -85,6 +85,9 @@ export function validatePipeline(document: unknown, ctx: ValidationContext): Val
   }
   if (errors.length > 0) return failed();
 
+  checkTopLevelSchedule(pipeline, errors);
+  if (errors.length > 0) return failed();
+
   const types: string[] = pipeline.processors.map((p: any) => p.type);
   const dedupeAt = types.lastIndexOf("dedupe");
   if (dedupeAt > types.indexOf("collect") && types.includes("collect")) {
@@ -112,6 +115,15 @@ function checkComponent(config: any, kind: ComponentKind, path: string, errors: 
   for (const error of checkSchema(componentSchema(def), config, path)) {
     errors.push({ path: error.path, code: schemaCode(error), message: error.message });
   }
+}
+
+// The top-level `schedule` only lets a host read the schedule without knowing components, so it must
+// say the same as the input.
+function checkTopLevelSchedule(pipeline: any, errors: PipelineIssue[]): void {
+  if (pipeline.schedule === undefined) return;
+  const { input, schedule } = pipeline;
+  const same = input.type === "schedule" && schedule.cron === input.cron && schedule.timezone === input.timezone && (schedule.missed ?? "run_once") === (input.missed ?? "run_once");
+  if (!same) errors.push({ path: "/schedule", code: "schema", message: "schedule must match the schedule input." });
 }
 
 function checkEnvironment(pipeline: any, ctx: ValidationContext, errors: PipelineIssue[]): void {

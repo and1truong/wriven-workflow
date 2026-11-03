@@ -2,6 +2,7 @@
 // the model. Sentence templates: .agents/specs/permissions.md.
 
 import { durationWords, groupThousands } from "./duration.ts";
+import { MISSED_SENTENCES, scheduleSentence } from "../scheduler/render.ts";
 import type { Permissions } from "./permissions.ts";
 
 export interface RenderContext {
@@ -22,7 +23,10 @@ function usd(amount: number): string {
 }
 
 export function renderPermissions(permissions: Permissions, ctx: RenderContext): string[] {
-  const lines = [`Runs: when ${ctx.displayName} asks.`];
+  const lines =
+    permissions.runs.kind === "schedule"
+      ? [scheduleSentence(permissions.runs.cron!, permissions.runs.timezone!), MISSED_SENTENCES[permissions.runs.missed!]!]
+      : [`Runs: when ${ctx.displayName} asks.`];
   lines.push(
     permissions.network.length === 0
       ? "Fetches from: nowhere."

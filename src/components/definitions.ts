@@ -4,7 +4,10 @@ import { findPlaceholders } from "../pipeline/pointer.ts";
 import { NUMBER, object, shapeWith, STRING, UNKNOWN } from "../pipeline/shape.ts";
 import { hostOfUrl, urlProblem } from "../pipeline/urls.ts";
 import { POINTER_PATTERN } from "../pipeline/pointer.ts";
-import { DURATION_PATTERN, parseDuration } from "../pipeline/duration.ts";
+import { DURATION_PATTERN, groupThousands, parseDuration } from "../pipeline/duration.ts";
+import { occurrencesPerDay, parseCron } from "../scheduler/cron.ts";
+import { nextOccurrences } from "../scheduler/occurrences.ts";
+import { isValidZone } from "../scheduler/zone.ts";
 import type { ComponentDef } from "./types.ts";
 
 const pointer = { type: "string", pattern: POINTER_PATTERN, patternMessage: "This must be a JSON Pointer such as /summary." };
@@ -29,6 +32,41 @@ const hostTrigger: ComponentDef = {
   outputShape: () => TRIGGER_SHAPE,
   permissions: (_config, draft) => {
     draft.runs = { kind: "host" };
+  },
+};
+
+const schedule: ComponentDef = {
+  type: "schedule",
+  kind: "input",
+  summary: "Start a run at each occurrence of a cron expression, when the engine owns the clock.",
+  properties: {
+    cron: { type: "string" },
+    timezone: { type: "string" },
+    missed: { enum: ["skip", "run_once", "run_all"] },
+  },
+  required: ["cron", "timezone"],
+  check(config, _shape, ctx) {
+    if (ctx.clock !== "engine") {
+      ctx.error("schedule_requires_engine_clock", "type", "This host keeps the clock, so a pipeline cannot have its own schedule; use host_trigger.");
+    }
+    let cron;
+    try {
+      cron = parseCron(config.cron);
+    } catch (err) {
+      ctx.error("schema", "cron", (err as Error).message);
+    }
+    if (!isValidZone(config.timezone)) {
+      ctx.error("schema", "timezone", `${config.timezone} is not an IANA time zone name such as Australia/Brisbane.`);
+    } else if (cron && nextOccurrences(cron, config.timezone, 0, 1).length === 0) {
+      ctx.error("schema", "cron", `\`${config.cron}\` never fires.`);
+    }
+    if (cron && ctx.limits.runs_per_day !== undefined && occurrencesPerDay(cron) > ctx.limits.runs_per_day) {
+      ctx.error("limit_out_of_range", "cron", `\`${config.cron}\` produces ${groupThousands(occurrencesPerDay(cron))} runs per day; runs_per_day is ${ctx.limits.runs_per_day}.`);
+    }
+  },
+  outputShape: () => TRIGGER_SHAPE,
+  permissions(config, draft) {
+    draft.runs = { kind: "schedule", cron: config.cron, timezone: config.timezone, missed: config.missed ?? "run_once" };
   },
 };
 
@@ -240,7 +278,7 @@ const drop: ComponentDef = {
 
 export const DEDUPE_DEFAULTS = { remember: DEFAULT_REMEMBER, max_keys: DEFAULT_MAX_KEYS };
 
-export const COMPONENTS: ComponentDef[] = [hostTrigger, inject, httpFetch, parseFeed, dedupe, collect, template, hostLlm, hostResult, drop];
+export const COMPONENTS: ComponentDef[] = [hostTrigger, schedule, inject, httpFetch, parseFeed, dedupe, collect, template, hostLlm, hostResult, drop];
 
 export const COMPONENT_BY_TYPE = new Map(COMPONENTS.map((c) => [c.type, c]));
 
