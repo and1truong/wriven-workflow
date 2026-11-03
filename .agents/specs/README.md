@@ -17,3 +17,7 @@ Read in this order the first time:
 After v0, from the [composition grilling record](../inbox/2026W45/composition-components.md):
 
 10. [composition](composition.md) — declarative `condition` type; `filter`, `switch`, `split`, `try`/`catch`, `for_each`, `while`, `workflow`, `sleep`, `log`; message-id preservation, unit-level failure attribution, loop-aware idempotency keys, opt-in concurrent `host.llm`, and the changes these force on the specs above.
+
+From the [test-mocks grilling record](../inbox/2026W45/test-mocks.md):
+
+11. [test-mocks](test-mocks.md) — `mocks` on `pipeline.test` and `tests[]`: replace a processor step with fixed messages, replies or a catchable failure, chosen per unit by a `condition`; shape narrowed to what downstream reads; `mock_unmatched`.

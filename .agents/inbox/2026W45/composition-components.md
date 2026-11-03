@@ -80,4 +80,5 @@ Khi viết [spec composition](../../specs/composition.md), cháu gặp bốn ch�
 ## Liên quan
 
 - Spec: [composition](../../specs/composition.md) (2026-11-03)
+- Mock trong test, tách từ câu hỏi của Hong khi đọc file này: [test-mocks](test-mocks.md)
 - [Grilling đầu](wriven-workflow.md), [pipeline-format](../../specs/pipeline-format.md), [ADR 003](../../decisions/003-no-expression-language.md), [research-benthos](../../research/research-benthos.md), [câu hỏi mở](../../open-questions.md)
