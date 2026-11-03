@@ -75,4 +75,5 @@ Một binary `wriven-workflow` do host sinh, nói JSON-RPC 2.0 qua stdio. Host g
 ## Liên quan
 
 - [Spec](../../specs/README.md), [ADR](../../decisions/README.md), [ticket](../../tickets/README.md), [câu hỏi mở](../../open-questions.md)
+- Grilling tiếp theo: [component composition sau v0](composition-components.md)
 - Tra cứu ngày 2026-11-03: [runtime](../../research/research-runtime.md), [Benthos/Redpanda Connect/Bento](../../research/research-benthos.md), [tool-calling của ba provider](../../research/research-tool-calling.md)

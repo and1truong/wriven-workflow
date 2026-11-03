@@ -14,6 +14,9 @@ Two lists. The first is what Hong decides for this repository. The second is wha
 9. **Registry publication.** GitHub releases only, or also npm/JSR. Not needed for Wriven. ([packaging-and-release](specs/packaging-and-release.md#open-points))
 
 11. **Developer tooling.** Bun is pinned at 1.4.3, what this machine has, and its test runner names itself `1.4.3-canary.1`. x64 builds have never been executed here because Rosetta is not installed. Decide whether to upgrade Bun and install Rosetta before a first release. ([packaging-and-release](specs/packaging-and-release.md))
+12. **Declarative `condition` type.** `while` needs a check, and ADR 003 rules out expressions. Proposal: one shared schema-checked object (`{ "pointer": "/title", "contains": "Rust" }`; `equals`, `in`, `contains`, `exists`, `gt`/`lt`; no regex), built before any of the post-v0 composition components. ([composition grilling](inbox/2026W45/composition-components.md), open point 1)
+13. **`switch`, `filter`, `split` after v0.** Not on Hong's post-v0 list; with `jq` dropped nothing else covers them. Confirm they are left out on purpose, or add them. ([composition grilling](inbox/2026W45/composition-components.md), open point 2)
+14. **Retry shape.** A `retry` wrapper component or the per-component `retry` field that `http_fetch` and `host_result` have today; one, not both. ([composition grilling](inbox/2026W45/composition-components.md), open point 3)
 
 ## For the Wriven side (preconditions for integration)
 
