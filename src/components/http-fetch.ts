@@ -189,13 +189,15 @@ export const httpFetch: Processor = async (config, batch, ctx) => {
             meta: { ...message.meta, source_url: url },
           };
         } catch (err) {
-          // A missing fixture is a mistake in the test, not a source being down.
-          const terminal = ctx.signal.aborted || (err instanceof StepError && (err.kind === "cancelled" || err.kind === "fixture_missing"));
-          if (config.on_error === "skip" && err instanceof StepError && !terminal) {
-            ctx.warn(id, err.kind, err.message);
-            continue;
+          const located = err instanceof StepError ? new StepError(err.kind, err.message, { ...err.extras, message_id: id }) : err;
+          // The unit is this URL of this message, as the step received it.
+          const unit = { id, data: structuredClone(message.data), meta: { ...message.meta, source_url: url } };
+          try {
+            if (ctx.signal.aborted) throw located;
+            ctx.unitFailed(unit, located);
+          } catch (uncaught) {
+            failure ??= uncaught;
           }
-          failure ??= err instanceof StepError ? new StepError(err.kind, err.message, { ...err.extras, message_id: id }) : err;
         }
       }
     };

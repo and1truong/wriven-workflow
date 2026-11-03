@@ -19,6 +19,8 @@ export interface ReportWarning {
   message_id: string | null;
   code: string;
   message: string;
+  // The try that caught this failure.
+  caught_by?: string;
 }
 
 export interface ReportLog {
@@ -107,7 +109,7 @@ export const REPORT_SCHEMA: JsonSchema = {
       items: {
         type: "object",
         required: ["step_id", "message_id", "code", "message"],
-        properties: { step_id: { type: "string" }, message_id: { type: ["string", "null"] }, code: { type: "string" }, message: { type: "string" } },
+        properties: { step_id: { type: "string" }, message_id: { type: ["string", "null"] }, code: { type: "string" }, message: { type: "string" }, caught_by: { type: "string" } },
       },
     },
     steps: {

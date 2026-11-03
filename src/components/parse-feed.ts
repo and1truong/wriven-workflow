@@ -216,8 +216,7 @@ export const parseFeed: Processor = async (config, batch, ctx) => {
       });
     } catch (err) {
       const text = `${url || `Message ${message.id}`} could not be read as a feed: ${(err as Error).message}`;
-      if (config.on_error !== "skip") throw new StepError("feed_invalid", text, { message_id: message.id });
-      ctx.warn(message.id, "feed_invalid", text);
+      ctx.unitFailed(message, new StepError("feed_invalid", text, { message_id: message.id }));
     }
   }
   return out;

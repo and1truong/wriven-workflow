@@ -36,6 +36,8 @@ export function isSubset(next: Permissions, pinned: Permissions): boolean {
     atMost(next.results.retry?.max_attempts ?? 0, pinned.results.retry?.max_attempts ?? 0) &&
     next.results.kind === pinned.results.kind &&
     (pinned.skips_failed_sources || !next.skips_failed_sources) &&
+    (pinned.skips_failed_items || !next.skips_failed_items) &&
+    (pinned.handles_failed_items || !next.handles_failed_items) &&
     atMost(next.limits.runs_per_day, pinned.limits.runs_per_day) &&
     parseDuration(next.limits.run_timeout) <= parseDuration(pinned.limits.run_timeout) &&
     canonicalJson(next.runs) === canonicalJson(pinned.runs)

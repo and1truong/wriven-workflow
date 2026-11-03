@@ -33,10 +33,31 @@ export interface StepContext {
   log(messageId: string, text: string): void;
   // Waits, or under pipeline.test moves the run's clock instead. Cancellation interrupts it.
   sleep(ms: number): Promise<void>;
-  // Runs a container's nested steps on a batch.
-  runSteps(steps: any[], batch: Message[]): Promise<Message[]>;
   // Inside pipeline.test, where concurrency is clamped to 1 so mock replies come in a fixed order.
   testing: boolean;
+  // Runs a container's nested steps on a batch. Failures of units inside go to `onFailure` when given
+  // (a try with catch), else wherever this step's own failures go.
+  runSteps(steps: any[], batch: Message[], onFailure?: FailureHandler): Promise<Message[]>;
+  // A unit (one message, or one URL of http_fetch) failed. Throws unless a try or on_error: skip
+  // takes it; then the processor carries on without that unit.
+  unitFailed(unit: Message, err: unknown): void;
+  // A warning on behalf of another step, as a try reports what it caught.
+  warnFor(warning: { step_id: string; message_id: string | null; code: string; message: string; caught_by?: string }): void;
+}
+
+export type FailureHandler = (unit: Message, err: StepError, stepId: string) => void;
+
+// Runs `fn` per message; a message whose failure is caught leaves the batch.
+async function perMessage(batch: Message[], ctx: StepContext, fn: (message: Message) => Promise<Message[]> | Message[]): Promise<Message[]> {
+  const out: Message[] = [];
+  for (const message of batch) {
+    try {
+      out.push(...(await fn(message)));
+    } catch (err) {
+      ctx.unitFailed(message, err);
+    }
+  }
+  return out;
 }
 
 export type Processor = (config: any, batch: Message[], ctx: StepContext) => Promise<Message[]>;
@@ -77,13 +98,14 @@ function renderText(text: string, message: Message, missing: "error" | "empty"):
   });
 }
 
-const template: Processor = async (config, batch) => {
-  for (const message of batch) write(message, config.target, renderText(config.text, message, config.missing ?? "error"));
-  return batch;
-};
+const template: Processor = async (config, batch, ctx) =>
+  perMessage(batch, ctx, (message) => {
+    write(message, config.target, renderText(config.text, message, config.missing ?? "error"));
+    return [message];
+  });
 
-const hostLlm: Processor = async (config, batch, ctx) => {
-  for (const message of batch) {
+const hostLlm: Processor = async (config, batch, ctx) =>
+  perMessage(batch, ctx, async (message) => {
     const prompt = readString(message, config.prompt, "prompt");
     let reply: any;
     try {
@@ -95,23 +117,23 @@ const hostLlm: Processor = async (config, batch, ctx) => {
         ...(config.max_output_tokens !== undefined ? { max_output_tokens: config.max_output_tokens } : {}),
       });
     } catch (err) {
-      if (err instanceof RpcError) throw new StepError(err.kind, err.message, { ...err.extras, message_id: message.id });
+      // What the host or the supervisor refused is never a unit failure a try may catch.
+      if (err instanceof RpcError) throw new StepError(err.kind, err.message, { ...err.extras, message_id: message.id, from_host: true });
       throw err;
     }
     if (reply.finished === "length") ctx.warn(message.id, "llm_truncated", "The model stopped at its output limit; the reply is cut short.");
     write(message, config.target, reply.text);
-  }
-  return batch;
-};
+    return [message];
+  });
 
 const dedupe: Processor = async (config, batch, ctx) => {
   const remember = parseDuration(config.remember ?? DEDUPE_DEFAULTS.remember);
   const now = ctx.now();
-  const kept = batch.filter((message) => {
+  const kept = await perMessage(batch, ctx, (message) => {
     const found = pointerGet(message.data, config.key);
     if (!found.found) throw new StepError("unresolved_pointer", `${config.key} does not exist in message ${message.id}.`, { message_id: message.id });
     const key = typeof found.value === "string" ? found.value : JSON.stringify(found.value);
-    return ctx.state.admit(ctx.stepId, key, now, remember);
+    return ctx.state.admit(ctx.stepId, key, now, remember) ? [message] : [];
   });
   ctx.state.trim(ctx.stepId, now, remember, config.max_keys ?? DEDUPE_DEFAULTS.max_keys);
   ctx.stateTouched();
@@ -130,15 +152,13 @@ const collect: Processor = async (config, batch, ctx) => {
 
 const split: Processor = async (config, batch, ctx) => {
   const max = config.max_items ?? SPLIT_DEFAULT_MAX;
-  const out: Message[] = [];
-  for (const message of batch) {
+  return perMessage(batch, ctx, (message) => {
     const found = pointerGet(message.data, config.field);
     if (!found.found) throw new StepError("unresolved_pointer", `${config.field} does not exist in message ${message.id}.`, { message_id: message.id });
     if (!Array.isArray(found.value)) throw new StepError("shape_mismatch", `split needs an array, but ${config.field} is not one in message ${message.id}.`, { message_id: message.id });
     if (found.value.length > max) ctx.warn(message.id, "split_truncated", `${found.value.length} items arrived; only the first ${max} were kept.`);
-    found.value.slice(0, max).forEach((item, i) => out.push({ id: `${message.id}.${i}`, data: structuredClone(item), meta: { ...message.meta } }));
-  }
-  return out;
+    return found.value.slice(0, max).map((item, i) => ({ id: `${message.id}.${i}`, data: structuredClone(item), meta: { ...message.meta } }));
+  });
 };
 
 const log: Processor = async (config, batch, ctx) => {
@@ -177,7 +197,13 @@ const switchProcessor: Processor = async (config, batch, ctx) => {
   const groups: Message[][] = config.cases.map(() => []);
   const unmatched: Message[] = [];
   for (const message of batch) {
-    const index = (config.cases as any[]).findIndex((c) => evaluate(c.when, message, ctx.now()));
+    let index: number;
+    try {
+      index = (config.cases as any[]).findIndex((c) => evaluate(c.when, message, ctx.now()));
+    } catch (err) {
+      ctx.unitFailed(message, err);
+      continue;
+    }
     (index >= 0 ? groups[index]! : unmatched).push(message);
   }
   const outputs: Message[][] = [];
@@ -190,9 +216,20 @@ const switchProcessor: Processor = async (config, batch, ctx) => {
   return out.sort((a, b) => position.get(a.id)! - position.get(b.id)!);
 };
 
-const filter: Processor = async (config, batch, ctx) => batch.filter((message) => evaluate(config.keep_if, message, ctx.now()));
+const filter: Processor = async (config, batch, ctx) => perMessage(batch, ctx, (message) => (evaluate(config.keep_if, message, ctx.now()) ? [message] : []));
 
-const PROCESSORS: Record<string, Processor> = { http_fetch: httpFetch, parse_feed: parseFeed, dedupe, collect, template, host_llm: hostLlm, filter, split, log, sleep, for_each: forEach, switch: switchProcessor };
+const tryProcessor: Processor = async (config, batch, ctx) => {
+  // Without catch a try only groups steps: failures go wherever they would have gone.
+  if (config.catch === undefined) return ctx.runSteps(config.steps, batch);
+  const failed: Message[] = [];
+  const out = await ctx.runSteps(config.steps, batch, (unit, err, stepId) => {
+    failed.push(unit);
+    ctx.warnFor({ step_id: stepId, message_id: unit.id, code: err.kind, message: err.message, caught_by: ctx.stepId });
+  });
+  return out;
+};
+
+const PROCESSORS: Record<string, Processor> = { http_fetch: httpFetch, parse_feed: parseFeed, dedupe, collect, template, host_llm: hostLlm, filter, split, log, sleep, for_each: forEach, switch: switchProcessor, try: tryProcessor };
 
 export function processorFor(type: string): Processor {
   const processor = PROCESSORS[type];

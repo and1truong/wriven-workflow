@@ -289,7 +289,15 @@ export class RunProcess {
       }
     } else if (method === "warning") {
       if (this.warnings.length >= MAX_WARNINGS) this.warningsOmitted++;
-      else this.warnings.push({ step_id: bounded(params.step_id), message_id: params.message_id === null ? null : bounded(params.message_id), code: bounded(params.code), message: bounded(params.message) });
+      else {
+        this.warnings.push({
+          step_id: bounded(params.step_id),
+          message_id: params.message_id === null ? null : bounded(params.message_id),
+          code: bounded(params.code),
+          message: bounded(params.message),
+          ...(params.caught_by !== undefined ? { caught_by: bounded(params.caught_by) } : {}),
+        });
+      }
     } else if (method === "log") {
       if (this.logs.length < MAX_LOGS) this.logs.push({ step_id: bounded(params.step_id), message_id: bounded(params.message_id), text: bounded(params.text) });
       else this.logsTruncated = true;

@@ -2,7 +2,7 @@
 // input emits one batch, so "the batch was acknowledged" and "the run succeeded" are the same event.
 
 import type { Fetcher } from "../components/http-fetch.ts";
-import { deliver, processorFor, type StepContext } from "../components/runtime.ts";
+import { deliver, processorFor, type FailureHandler, type StepContext } from "../components/runtime.ts";
 import { RpcError } from "../protocol/errors.ts";
 import { StepError, type Message, type RunInit, type RunOutcome } from "./messages.ts";
 import { RunState } from "./run-state.ts";
@@ -12,7 +12,7 @@ export interface ExecutorWorld {
   signal: AbortSignal;
   llm: StepContext["llm"];
   result: StepContext["result"];
-  warn(warning: { step_id: string; message_id: string | null; code: string; message: string }): void;
+  warn(warning: { step_id: string; message_id: string | null; code: string; message: string; caught_by?: string }): void;
   log(entry: { step_id: string; message_id: string; text: string }): void;
   fetcher: Fetcher | null;
   network(host: string, bytes: number): void;
@@ -53,7 +53,7 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
   let touched = false;
   // Nested steps run once per invocation of their container; the report sums them.
   const nested = new Map<string, NestedStats>();
-  const context = (id: string): StepContext => ({
+  const context = (id: string, onFailure: FailureHandler | null): StepContext => ({
     runId: init.run_id,
     stepId: id,
     signal: world.signal,
@@ -68,7 +68,12 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
       if (init.trigger === "test") slept += ms;
       else await abortableSleep(ms, world.signal);
     },
-    runSteps: (steps, batch) => runList(steps, batch, id),
+    runSteps: (steps, batch, handler) => runList(steps, batch, id, handler ?? onFailure),
+    unitFailed: (unit, err) => {
+      if (onFailure === null || !isCatchable(err)) throw err;
+      onFailure(unit, err, id);
+    },
+    warnFor: (warning) => world.warn(warning),
     testing: init.trigger === "test",
     llm: world.llm,
     result: world.result,
@@ -77,14 +82,17 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
     denied: world.denied,
     bypassAllowlistCheck: init.test_hook?.bypass_allowlist_check === true,
   });
-  const runStep = async (config: any, batch: Message[], parent: string | null): Promise<Message[]> => {
+  const runStep = async (config: any, batch: Message[], parent: string | null, onFailure: FailureHandler | null): Promise<Message[]> => {
     throwIfCancelled(world.signal);
     stepId = config.id;
     world.stepStarted(config.id);
     const started = Date.now();
     let out: Message[];
     try {
-      out = await processorFor(config.type)(config, batch, context(config.id));
+      // on_error: skip is a try with an empty catch around this one step, reported as v0 did.
+      const handler: FailureHandler | null =
+        config.on_error === "skip" ? (unit, err, stepId) => world.warn({ step_id: stepId, message_id: unit.id, code: err.kind, message: err.message }) : onFailure;
+      out = await processorFor(config.type)(config, batch, context(config.id, handler));
     } catch (err) {
       failedAt ??= config.id;
       throw err;
@@ -108,9 +116,9 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
     }
     return out;
   };
-  const runList = async (steps: any[], batch: Message[], parent: string | null): Promise<Message[]> => {
+  const runList = async (steps: any[], batch: Message[], parent: string | null, onFailure: FailureHandler | null): Promise<Message[]> => {
     let current = batch;
-    for (const config of steps) current = await runStep(config, current, parent);
+    for (const config of steps) current = await runStep(config, current, parent, onFailure);
     return current;
   };
   const noState = { committed: false, dedupe_keys: 0 };
@@ -118,12 +126,12 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
     state = new RunState(init.state_path, init.initial_state);
     let batch = inputMessages(init);
     world.stepFinished({ step_id: "input", in: 0, out: batch.length, dropped: 0, duration_ms: 0 });
-    batch = await runList(init.pipeline.processors, batch, null);
+    batch = await runList(init.pipeline.processors, batch, null, null);
     throwIfCancelled(world.signal);
     stepId = "output";
     world.stepStarted(stepId);
     const started = Date.now();
-    await deliver(init.pipeline.output, batch, context(stepId));
+    await deliver(init.pipeline.output, batch, context(stepId, null));
     world.stepFinished({ step_id: stepId, in: batch.length, out: batch.length, dropped: 0, duration_ms: Date.now() - started });
     // Before the final report, so a host that sees "succeeded" knows the keys are on disk.
     stepId = "state";
@@ -132,6 +140,13 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
   } catch (err) {
     return { status: cancelledBy(err, world.signal) ? "cancelled" : "failed", error: describe(err, failedAt ?? stepId), state: noState };
   }
+}
+
+// Failures of the run itself, of the host, or of the test are never a unit's to recover from.
+const UNCATCHABLE = new Set(["cancelled", "fixture_missing", "internal", "budget_exceeded", "timed_out", "memory_limit"]);
+
+function isCatchable(err: unknown): err is StepError {
+  return err instanceof StepError && err.extras.from_host !== true && !UNCATCHABLE.has(err.kind);
 }
 
 function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
@@ -159,7 +174,7 @@ function cancelledBy(err: unknown, signal: AbortSignal): boolean {
 
 function describe(err: unknown, stepId: string): NonNullable<RunOutcome["error"]> {
   if (err instanceof StepError) {
-    const { message_id, ...extras } = err.extras;
+    const { message_id, from_host: _fromHost, ...extras } = err.extras;
     return { ...extras, kind: err.kind, message: err.message, step_id: stepId, message_id: (message_id as string | undefined) ?? null };
   }
   if (err instanceof RpcError) return { ...err.extras, kind: err.kind, message: err.message, step_id: stepId, message_id: null };

@@ -34,6 +34,8 @@ export function renderPermissions(permissions: Permissions, ctx: RenderContext):
   );
   if (permissions.network_retry) lines.push(`Retries a failed fetch up to ${permissions.network_retry.max_attempts} times.`);
   if (permissions.skips_failed_sources) lines.push("Skips a source that cannot be fetched or read that day, and says so in the run report.");
+  if (permissions.skips_failed_items) lines.push("Skips an item that fails at a step, and says so in the run report.");
+  if (permissions.handles_failed_items) lines.push("When an item fails at a step, handles it with fallback steps instead of stopping, and says so in the run report.");
   if (permissions.state) {
     lines.push(`Keeps: a list of items already seen, on this Mac, for ${durationWords(permissions.state.remember)} (up to ${count(permissions.state.max_keys, "item")}).`);
   }

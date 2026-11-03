@@ -275,6 +275,23 @@ const switchDef: ComponentDef = {
   },
 };
 
+const tryDef: ComponentDef = {
+  type: "try",
+  kind: "processor",
+  summary:
+    "Run steps; a unit that fails at one of them (one URL of http_fetch, one message elsewhere) leaves steps while the rest carry on. catch: [] drops failed units and reports each; without catch a failure fails the run as if there were no try. Errors from the host, limits, timeouts and cancellation are never caught.",
+  properties: { steps: stepList, catch: optionalSteps },
+  required: ["steps"],
+  preservesIds: true,
+  children: (config) => [{ field: "steps", steps: config.steps }, ...(config.catch !== undefined ? [{ field: "catch", steps: config.catch }] : [])],
+  walk(config, shape, ctx) {
+    return ctx.checkSteps("steps", config.steps, shape);
+  },
+  permissions(config, draft) {
+    if (Array.isArray(config.catch) && config.catch.length === 0) draft.skips_failed_items = true;
+  },
+};
+
 const DEFAULT_REMEMBER = "30d";
 const DEFAULT_MAX_KEYS = 10_000;
 
@@ -405,7 +422,7 @@ const drop: ComponentDef = {
 
 export const DEDUPE_DEFAULTS = { remember: DEFAULT_REMEMBER, max_keys: DEFAULT_MAX_KEYS };
 
-export const COMPONENTS: ComponentDef[] = [hostTrigger, schedule, inject, httpFetch, parseFeed, dedupe, collect, template, hostLlm, filter, split, log, sleep, forEach, switchDef, hostResult, drop];
+export const COMPONENTS: ComponentDef[] = [hostTrigger, schedule, inject, httpFetch, parseFeed, dedupe, collect, template, hostLlm, filter, split, log, sleep, forEach, switchDef, tryDef, hostResult, drop];
 
 export const COMPONENT_BY_TYPE = new Map(COMPONENTS.map((c) => [c.type, c]));
 

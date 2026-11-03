@@ -26,6 +26,8 @@ What a stream's permissions are, how the engine computes them from a pipeline, h
   "results": { "kind": "host" | "none", "retry": { "max_attempts": 3 } | null },
   "state": { "kind": "dedupe", "remember": "90d", "max_keys": 10000 } | null,
   "skips_failed_sources": true,
+  "skips_failed_items": false,
+  "handles_failed_items": false,
   "limits": { "runs_per_day": 2, "run_timeout": "5m" },
   "denied": ["subprocess", "filesystem_outside_state", "network_outside_list", "inbound_network", "provider_keys"]
 }
@@ -41,6 +43,7 @@ Rules of derivation, per component. Every step contributes wherever it sits: the
 | `parse_feed` | `skips_failed_sources` if `on_error: skip` |
 | `dedupe` | `state` with its `remember` and `max_keys` |
 | `collect`, `template` | nothing |
+| `try` | `skips_failed_items` if its `catch` is `[]`; `handles_failed_items` if its `catch` has steps |
 | `host_llm` | `llm.max_calls_per_run = limits.llm_calls_per_run`; `max_cost_per_run_usd = limits.llm_cost_per_run_usd`; `receives_fetched_content = true` when any `http_fetch` precedes it |
 | `host_result` | `results.kind = "host"`, `retry` if set |
 | `drop` | `results.kind = "none"` |
@@ -66,6 +69,8 @@ The engine renders the object into an ordered list of English sentences. The hos
 | `llm.receives_fetched_content` | "Sends fetched web content to the AI provider." |
 | `results.kind = host` | "Writes results to: Wriven." (host display name) |
 | `results.retry` | "Retries writing a result up to 3 times." |
+| `skips_failed_items` | "Skips an item that fails at a step, and says so in the run report." |
+| `handles_failed_items` | "When an item fails at a step, handles it with fallback steps instead of stopping, and says so in the run report." |
 | `state` | "Keeps: a list of items already seen, on this Mac, for 90 days (up to 10,000 items)." |
 | `limits` | "Limits: at most 2 runs per day; each run stops after 5 minutes." |
 | `denied` | "Does not: run programs, read or write your files, listen for connections, send data anywhere not listed above, or hold any API key." |
@@ -94,7 +99,7 @@ OS sandbox: on (macOS Seatbelt).
 
 - `stream.create` stores `permissions`, `permissions_hash`, `rendered` (the sentences) and `rendered_version` in the manifest with status `pending_approval`.
 - `stream.approve { stream_id, permissions_hash }` succeeds only if the hash equals the manifest's; otherwise `conflict` with the current hash, so a host that showed stale sentences cannot approve by accident.
-- "Subset" for `stream.update`, per field: `network` new ⊆ old; `llm.max_calls_per_run` new ≤ old and `receives_fetched_content` not newly true; `max_cost` new ≤ old (null counts as unbounded, so introducing a cost cap is a subset, removing one is not); `runs_per_day` new ≤ old; `run_timeout` new ≤ old; `state.remember` and `max_keys` new ≤ old; `network_retry` and `results.retry` attempts new ≤ old (null = 0); `skips_failed_sources` may go true→false, not false→true; `runs` must be identical (any schedule change re-approves: it is cheap and the person should see it); `results.kind` must be identical.
+- "Subset" for `stream.update`, per field: `network` new ⊆ old; `llm.max_calls_per_run` new ≤ old and `receives_fetched_content` not newly true; `max_cost` new ≤ old (null counts as unbounded, so introducing a cost cap is a subset, removing one is not); `runs_per_day` new ≤ old; `run_timeout` new ≤ old; `state.remember` and `max_keys` new ≤ old; `network_retry` and `results.retry` attempts new ≤ old (null = 0); `skips_failed_sources`, `skips_failed_items` and `handles_failed_items` may each go true→false, not false→true; `runs` must be identical (any schedule change re-approves: it is cheap and the person should see it); `results.kind` must be identical.
 - What is compared against is the permissions the person last approved (`pinned` in the manifest). A narrowing update changes the active pipeline and leaves `pinned` alone, so moving back within what was approved needs no approval. A `stream.update` carrying exactly `previous_pipeline` is a rollback and applies without approval even when it is not a subset of the current pin (approve A, widen to C replacing a host, approve C, roll back to A), because the person approved A; it restores A's pin.
 - Anything not a subset: manifest gets `pending.permissions*` and status `pending_approval`; the active pipeline is retained as `manifest.previous.json` and is no longer runnable until approved or rolled back. `stream.update` returns `{ "status": "pending_approval", "diff": { "added": [sentences], "removed": [sentences] } }`.
 

@@ -14,6 +14,8 @@ export interface Permissions {
   results: { kind: "host" | "none"; retry: { max_attempts: number } | null };
   state: { kind: "dedupe"; remember: string; max_keys: number } | null;
   skips_failed_sources: boolean;
+  skips_failed_items: boolean;
+  handles_failed_items: boolean;
   limits: { runs_per_day: number; run_timeout: string };
   denied: string[];
 }
@@ -36,6 +38,8 @@ export function derivePermissions(pipeline: any): Permissions {
     results: { kind: "none", retry: null },
     state: null,
     skips_failed_sources: false,
+    skips_failed_items: false,
+    handles_failed_items: false,
     limits: { runs_per_day: pipeline.limits.runs_per_day, run_timeout: pipeline.limits.run_timeout },
     denied: DENIED,
     fetched: false,
