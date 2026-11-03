@@ -59,6 +59,7 @@ export interface RunReport {
   engine_version: string;
   cancelled_at_step?: string | null;
   nothing_new?: boolean;
+  resets_at?: string;
 }
 
 const time = { type: "string" };

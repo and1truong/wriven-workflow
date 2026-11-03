@@ -10,6 +10,7 @@ import { parseDuration } from "../pipeline/duration.ts";
 import { mkdirSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
+import type { Ceilings } from "../pipeline/ceilings.ts";
 import type { Permissions } from "../pipeline/permissions.ts";
 import { startProxy, type ProxyOptions, type RunProxy } from "./proxy.ts";
 import { generateProfile, programPaths } from "./seatbelt.ts";
@@ -56,6 +57,8 @@ export interface SupervisorEnv {
   // The stream's directory, for the state files a run may touch. Null in tests, which keep no state.
   streamDir(streamId: string): string;
   memoryLimitMb: number;
+  // A host can lower these after a stream was approved; a run keeps to the lower of the two.
+  ceilings: Ceilings;
   // How often RSS is sampled. A fast spike can pass the limit briefly before the kill (threat model T9).
   memorySampleMs?: number;
   // True when the engine runs on an injected clock, which the run process must share.
@@ -110,7 +113,7 @@ export class RunProcess {
     this.spawn();
     this.env.onStarted(this.job, this.startedAt);
     void this.watchMemory();
-    const timeout = this.env.test?.runTimeoutMs ?? parseDuration(this.job.pipeline.limits.run_timeout);
+    const timeout = this.env.test?.runTimeoutMs ?? Math.min(parseDuration(this.job.pipeline.limits.run_timeout), parseDuration(this.env.ceilings.run_timeout));
     this.timeoutTimer = setTimeout(() => {
       this.killWith({ status: "timed_out", error: this.errorOf("timed_out", `The run passed its limit of ${this.job.pipeline.limits.run_timeout}.`) });
     }, timeout);
@@ -254,7 +257,7 @@ export class RunProcess {
   }
 
   private async forwardLlm(params: any): Promise<unknown> {
-    const limit = this.job.pipeline.limits.llm_calls_per_run as number;
+    const limit = Math.min(this.job.pipeline.limits.llm_calls_per_run as number, this.env.ceilings.llm_calls_per_run);
     if (this.llmCalls >= limit) {
       throw new RpcError("budget_exceeded", `The pipeline allows at most ${limit} model calls per run.`, { limit: "llm_calls_per_run", value: limit });
     }

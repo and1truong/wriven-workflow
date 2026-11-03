@@ -45,8 +45,8 @@ function engineOptions(now?: () => Date) {
   return { ...(now ? { now } : {}), test: { dial: () => ({ hostname: "127.0.0.1", port: server.port as number }), hook: { tls_ca: CA } } };
 }
 
-async function approved(host: FakeHost): Promise<string> {
-  const created = await host.call("stream.create", { pipeline: EXAMPLE });
+async function approved(host: FakeHost, pipeline: unknown = EXAMPLE): Promise<string> {
+  const created = await host.call("stream.create", { pipeline });
   await host.call("stream.approve", { stream_id: created.stream_id, permissions_hash: created.permissions_hash });
   return created.stream_id;
 }
@@ -71,7 +71,7 @@ describe("the example pipeline", () => {
   test("runs end to end: one result, prompt with the titles, ids in state.json", async () => {
     bodies = healthy();
     const { host, dir } = await startInProcess({ engine: engineOptions(), llm: { responses: ["Here is the digest."] }, init: { capabilities: { llm: true, results: true } } });
-    const id = await approved(host);
+    const id = await approved(host, { ...EXAMPLE, limits: { ...EXAMPLE.limits, runs_per_day: 48 } });
     const report = await runOnce(host, id);
     expect(report.error).toBeNull();
     expect(report.status).toBe("succeeded");

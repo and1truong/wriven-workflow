@@ -4,7 +4,9 @@
 import { RpcError } from "../protocol/errors.ts";
 import type { ReportError, RunReport, RunTrigger } from "../report.ts";
 import { RunProcess, skippedOrCancelledReport, type RunJob, type SupervisorEnv } from "../supervisor/supervisor.ts";
+import { join } from "node:path";
 import { logLine } from "../log.ts";
+import { readJson, writeJsonAtomic } from "../state/files.ts";
 import type { Manifest } from "../state/streams.ts";
 
 const FINISHED_REMEMBERED = 1000;
@@ -22,6 +24,12 @@ export interface TriggerOptions {
 
 export interface QueueEnv extends SupervisorEnv {
   emitFinished(report: RunReport): void;
+}
+
+const DAY_MS = 86_400_000;
+
+interface RunLog {
+  started: string[];
 }
 
 export class RunQueue {
@@ -103,6 +111,33 @@ export class RunQueue {
     return this.stopped;
   }
 
+  // Counts started runs per stream over a rolling 24 hours, failures included. A run past the limit never
+  // starts: it gets a `skipped` report saying when the window frees up.
+  private admit(job: RunJob): boolean {
+    const path = join(this.env.streamDir(job.stream_id!), "runs.json");
+    const now = this.env.now().getTime();
+    const log = readJson<RunLog>(path) ?? { started: [] };
+    const recent = log.started.filter((t) => Date.parse(t) > now - DAY_MS);
+    const limit = Math.min(job.pipeline.limits.runs_per_day, this.env.ceilings.runs_per_day);
+    if (recent.length >= limit) {
+      const resetsAt = new Date(Date.parse(recent[0]!) + DAY_MS).toISOString();
+      const error: ReportError = {
+        kind: "runs_per_day_exceeded",
+        message: `This stream has started ${recent.length} runs in the last 24 hours; its limit is ${limit}.`,
+        step_id: null,
+        message_id: null,
+        retry_after: null,
+        limit: "runs_per_day",
+        value: limit,
+        resets_at: resetsAt,
+      };
+      this.emit(skippedOrCancelledReport(job, this.env.now(), "skipped", error, { resets_at: resetsAt }));
+      return false;
+    }
+    writeJsonAtomic(path, { started: [...recent, new Date(now).toISOString()] } satisfies RunLog);
+    return true;
+  }
+
   private finishUnstarted(job: RunJob, reason: string): void {
     const error: ReportError = { kind: "cancelled", message: `The run was cancelled before it started (${reason}).`, step_id: null, message_id: null, retry_after: null, reason };
     this.emit(skippedOrCancelledReport(job, this.env.now(), "cancelled", error));
@@ -116,7 +151,8 @@ export class RunQueue {
 
   private pump(): void {
     if (this.current || this.stopped) return;
-    const next = this.waiting.shift();
+    let next = this.waiting.shift();
+    while (next && !this.admit(next.job)) next = this.waiting.shift();
     if (!next) return;
     const process = new RunProcess(next.job, this.env);
     const finished = process

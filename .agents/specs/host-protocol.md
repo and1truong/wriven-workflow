@@ -132,7 +132,7 @@ JSON-RPC `error` objects: `code` is an integer in the range -32000 to -32099 for
 | `permission_denied` | -32007 | both | `host?`, `path?` | Run on unapproved stream; proxy refusal; sandbox denial. |
 | `sandbox_unavailable` | -32008 | engine→host | `reason` | Cannot set up Seatbelt and `sandbox: required`. |
 | `budget_exceeded` | -32010 | both | `limit`, `value` | LLM calls or cost cap reached; host or engine side. |
-| `runs_per_day_exceeded` | -32011 | engine→host | `resets_at` | Trigger refused. |
+| `runs_per_day_exceeded` | -32011 | engine→host | `resets_at` | A queued run did not start. It appears as a report's `error` with status `skipped`, not as an RPC error: `run.trigger` answered `queued` before the limit was checked, at the moment the run would start. |
 | `timed_out` | -32012 | engine→host | `step_id?` | Run timeout; also a report status. |
 | `cancelled` | -32013 | both | `reason` | Request or run cancelled. |
 | `credentials_missing` | -32020 | host→engine | `provider?` | Host has no key for the chosen provider. |

@@ -114,7 +114,7 @@ Each component states: config fields, what it reads and emits, how it behaves on
 | `run_timeout` | yes | `30s`–`30m` | engine supervisor (kills the run process) |
 | `llm_cost_per_run_usd` | no | > 0 | engine, using `usage.cost_usd` returned by the host when present; when the host returns no cost the limit is reported as "not enforceable" in permissions |
 
-Engine-wide ceilings (the upper ends above) are compiled in and reported by `components.list`. A host may lower them at `initialize` but not raise them. See [ADR 008](../decisions/008-mandatory-limits.md).
+Engine-wide ceilings (the upper ends above) are compiled in and reported by `components.list`. A host may lower them at `initialize` but not raise them. A stream approved before a host lowered a ceiling keeps its pipeline, and each run keeps to the lower of the two. See [ADR 008](../decisions/008-mandatory-limits.md).
 
 ## Validation
 

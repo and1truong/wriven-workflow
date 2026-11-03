@@ -180,6 +180,7 @@ export class Engine {
       tempRoot: join(stateDir, "run-tmp"),
       streamDir: (streamId) => this.streams.dir(streamId),
       memoryLimitMb: ceilings.run_memory_mb,
+      ceilings,
       memorySampleMs: this.options.test?.memorySampleMs,
       injectClock: this.options.now !== undefined,
       test: this.options.test,
