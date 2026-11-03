@@ -12,6 +12,8 @@ export interface LlmScript {
   cost_usd?: number;
   // Stores the reply and drops the response this many times, as a lost line would.
   drop_responses?: number;
+  // Answers after this long, so concurrent calls overlap.
+  latency_ms?: number;
 }
 
 export interface ResultScript {
@@ -53,6 +55,9 @@ export class FakeHost {
   private readonly llmStore = new Map<string, any>();
   private readonly storedResults = new Map<string, any>();
   private readonly held = new Map<string, any>();
+  // host.llm requests received and not yet answered, and the most there ever were at once.
+  private openLlm = new Set<string>();
+  peakLlm = 0;
   private nextId = 1;
   private llmIndex = 0;
   private dropsLeft: number;
@@ -193,6 +198,16 @@ export class FakeHost {
   }
 
   private answerLlm(request: any): void {
+    this.openLlm.add(request.id);
+    this.peakLlm = Math.max(this.peakLlm, this.openLlm.size);
+    const latency = this.options.llm?.latency_ms;
+    if (latency) setTimeout(() => this.replyLlm(request), latency);
+    else this.replyLlm(request);
+  }
+
+  private replyLlm(request: any): void {
+    // Cancelled while it waited out the latency.
+    if (!this.openLlm.has(request.id)) return;
     const script = this.options.llm ?? { mode: "echo" };
     const key = request.params.idempotency_key;
     let reply = this.llmStore.get(key);
@@ -204,6 +219,7 @@ export class FakeHost {
       }
       if (script.error) {
         const { kind, message, ...extras } = script.error;
+        this.openLlm.delete(request.id);
         this.respondError(request.id, kind, message, extras);
         return;
       }
@@ -222,9 +238,11 @@ export class FakeHost {
     }
     if (this.dropsLeft > 0) {
       this.dropsLeft--;
+      this.openLlm.delete(request.id);
       this.print("host->engine", `<dropped response to ${request.id}>`);
       return;
     }
+    this.openLlm.delete(request.id);
     this.send({ jsonrpc: "2.0", id: request.id, result: reply });
   }
 
@@ -245,6 +263,7 @@ export class FakeHost {
   }
 
   private answerCancel(id: string): void {
+    this.openLlm.delete(id);
     if (!this.held.has(id)) return;
     this.held.delete(id);
     this.respondError(id, "cancelled", "The host stopped the request.", { reason: "cancelled" });

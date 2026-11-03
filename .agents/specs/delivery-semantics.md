@@ -29,7 +29,7 @@ Every arrow preserves the mapping to `B0`. There is exactly one `ack(B0)`.
 
 ## Backpressure
 
-A run process holds at most one batch in flight between any two processors: a processor does not start on batch N+1 until batch N has left it. With one batch per run in v0 this is moot, but the executor is written this way so that an input emitting many batches is throttled by the slowest stage rather than queueing in memory. `http_fetch` performs its URL fetches with a concurrency of 4; `host_llm` calls are sequential (one outstanding `host.llm` request per run, so the host never sees two concurrent calls from one run).
+A run process holds at most one batch in flight between any two processors: a processor does not start on batch N+1 until batch N has left it. With one batch per run in v0 this is moot, but the executor is written this way so that an input emitting many batches is throttled by the slowest stage rather than queueing in memory. `http_fetch` performs its URL fetches with a concurrency of 4; `host.llm` requests of one run are outstanding at most `llm_concurrency` at a time, a number the host declares at `initialize` (default 1, so a host that does not declare it never sees two concurrent calls from one run). Only `for_each` with `concurrency` and `workflow` branches can overlap calls ([composition](composition.md#for_each)). Each call is counted against the limit before it waits for a slot.
 
 ## Errors
 
@@ -91,7 +91,7 @@ A cancelled run commits no state and is not retried. The host decides whether to
 3. **Commit state on success only.** Correctness over cost, with the cost bounded by `runs_per_day`.
 4. **No cross-run redelivery.** A failed run stays failed (Wriven scheduled-actions decision 5: "Lần hỏng không chạy lại, đợi mốc kế tiếp"). The next scheduled occurrence is the retry, and the person sees both.
 5. **No `succeeded_empty` status; an optional `nothing_new: true` on `succeeded` instead.** Decided in engine-06. A host needs to say "nothing new today" without parsing warnings, but a run that found nothing did succeed, and every host switch over `status` would otherwise need another case for what is the same outcome. `nothing_new` is set when the run succeeded, delivered no result and has no warnings, so "all three feeds failed and were skipped" does not read as "nothing new": there the host sees the warnings instead.
-6. **Sequential `host.llm` calls per run.** Makes the cap check trivial and keeps the host's provider load predictable. Parallel calls are a later knob.
+6. **At most `llm_concurrency` outstanding `host.llm` calls per run, default 1.** Revised by composition grilling decision 15 (2026-11-03); the original was "sequential calls per run", which made the cap check trivial and the host's load predictable. Both still hold: the count is reserved before a call waits for a slot, and a host gets concurrency only when it asks for it.
 
 ## Risks
 

@@ -13,6 +13,9 @@ import { REPORT_SCHEMA } from "../report.ts";
 import { pipelineSchema } from "../pipeline/schema.ts";
 import { CONDITION_DOC } from "../pipeline/condition.ts";
 import { STRUCTURE_LIMITS } from "../pipeline/tree.ts";
+
+// The most host.llm requests a host may ask to have outstanding at once for one run.
+const MAX_LLM_CONCURRENCY = 8;
 import { isSubset, sentenceDiff } from "../pipeline/subset.ts";
 import { validatePipeline, type ValidationContext } from "../pipeline/validate.ts";
 import { RpcError } from "../protocol/errors.ts";
@@ -153,6 +156,10 @@ export class Engine {
     if (params.sandbox !== undefined && params.sandbox !== "required" && params.sandbox !== "optional") {
       throw new RpcError("invalid_params", 'sandbox must be "required" or "optional".', { reason: "invalid_sandbox" });
     }
+    const llmConcurrency = params.capabilities?.llm_concurrency ?? 1;
+    if (!Number.isInteger(llmConcurrency) || llmConcurrency < 1 || llmConcurrency > MAX_LLM_CONCURRENCY) {
+      throw new RpcError("invalid_params", `capabilities.llm_concurrency must be an integer from 1 to ${MAX_LLM_CONCURRENCY}.`, { reason: "invalid_capabilities" });
+    }
     const ceilings: Ceilings = effectiveCeilings(params.ceilings);
     const hostResponseMs = readDuration(params.timeouts?.host_response, DEFAULT_HOST_RESPONSE_MS, "timeouts.host_response");
     const stateDir = checkStateDir(params.state_dir);
@@ -196,6 +203,7 @@ export class Engine {
       now: this.now,
       hostResponseMs,
       llmReportsCost: this.context.llmReportsCost,
+      llmConcurrency: capabilities.llm_concurrency ?? 1,
       sandboxExec: sandboxAvailable ? this.sandbox.path : null,
       tempRoot: join(stateDir, "run-tmp"),
       streamDir: (streamId) => this.streams.dir(streamId),

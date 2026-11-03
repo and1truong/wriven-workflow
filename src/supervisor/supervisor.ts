@@ -60,6 +60,8 @@ export interface SupervisorEnv {
   // How long to wait for the host before treating a response as lost.
   hostResponseMs: number;
   llmReportsCost: boolean;
+  // How many host.llm requests of one run may be outstanding at once (the host's `llm_concurrency`).
+  llmConcurrency: number;
   // The path of `sandbox-exec`, or null to run without an OS sandbox.
   sandboxExec: string | null;
   // Where runs get their private temp directories: <state_dir>/run-tmp.
@@ -96,6 +98,8 @@ export class RunProcess {
   private readonly results: RunReport["results"] = [];
   private readonly outstanding = new Set<string>();
   private llmCalls = 0;
+  private llmActive = 0;
+  private readonly llmWaiting: Array<() => void> = [];
   private inputTokens = 0;
   private outputTokens = 0;
   private cost: number | null = null;
@@ -148,6 +152,8 @@ export class RunProcess {
       failure = toRpcError(err);
     }
     this.finishing = true;
+    // A run that failed while sibling calls were still with the host does not wait for them.
+    if (this.outstanding.size > 0) this.cancelOutstanding();
     clearTimeout(this.timeoutTimer);
     if (this.killTimer) clearTimeout(this.killTimer);
     await this.waitForExit();
@@ -315,7 +321,26 @@ export class RunProcess {
     if (this.llmCalls >= limit) {
       throw new RpcError("budget_exceeded", `The pipeline allows at most ${limit} model calls per run.`, { limit: "llm_calls_per_run", value: limit });
     }
+    // The call is counted before it waits for a slot, so concurrent calls cannot pass the limit.
     this.llmCalls++;
+    const release = await this.llmSlot();
+    try {
+      return await this.sendLlm(params, step, prompt);
+    } finally {
+      release();
+    }
+  }
+
+  private async llmSlot(): Promise<() => void> {
+    while (this.llmActive >= this.env.llmConcurrency) await new Promise<void>((resolve) => this.llmWaiting.push(resolve));
+    this.llmActive++;
+    return () => {
+      this.llmActive--;
+      this.llmWaiting.shift()?.();
+    };
+  }
+
+  private async sendLlm(params: any, step: any, prompt: string): Promise<unknown> {
     const started = Date.now();
     const key = `${this.job.run_id}/${params.step_id}/${params.message_id}`;
     const request = (attempt: number) => ({

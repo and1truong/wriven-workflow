@@ -128,6 +128,7 @@ Answer `{ text, usage: { input_tokens, output_tokens, cost_usd? }, provider, mod
 - **A key you are still working on must join that call, not start a second one.** The engine repeats a key when it has had no answer for `timeouts.host_response`, so a provider slower than 120 s is repeated while in flight. Set the timeout above your slowest expected call, and coalesce regardless.
 - **Count calls per run yourself** against `limits.llm_calls_per_run` of the pipeline you approved, and answer `budget_exceeded { limit, value }` when reached. The engine counts too; a bug on one side then cannot overspend. A small map from `run_id` to a count is enough.
 - **Usage is mandatory**, even without cost. A reply without it fails the run with `host_error`.
+- **Concurrency is yours to grant.** By default a run has one `host.llm` outstanding at a time. Declare `capabilities.llm_concurrency` (1 to 8) at `initialize` to let `for_each` with `concurrency` overlap calls; you then must handle that many concurrent calls per run, each with its own key. The engine counts every call against the limit before sending it, and sends `$/cancel` for each call still outstanding when the run fails.
 - **On `$/cancel { id }`, abort the provider request and answer `cancelled`.** The engine has already stopped waiting; answer anyway, as a late line is ignored.
 - **The engine never retries an error of yours.** A `retry_after` you send goes into the report for you to show.
 

@@ -11,7 +11,7 @@ From [composition](../specs/composition.md). Each ticket updates the specs its "
 1. [composition-01-condition-filter](completed/2026w45/composition-01-condition-filter.md) (done) — the declarative `condition` type with shape checks; `filter`.
 2. [composition-02-split-log-sleep](completed/2026w45/composition-02-split-log-sleep.md) (done) — leaf components; report `logs`; fake-clock `sleep`; `sleep_exceeds_timeout`.
 3. [composition-03-nested-steps-for-each](completed/2026w45/composition-03-nested-steps-for-each.md) (done) — nested step lists, pipeline-wide ids, ceilings, id-preservation property, permission walk, report `parent`/`invocations`; sequential `for_each`.
-4. [composition-04-concurrent-host-llm](composition-04-concurrent-host-llm.md) — `llm_concurrency` capability, reserved budget, concurrent `for_each`, harness clamp, conformance case.
+4. [composition-04-concurrent-host-llm](completed/2026w45/composition-04-concurrent-host-llm.md) (done) — `llm_concurrency` capability, reserved budget, concurrent `for_each`, harness clamp, conformance case.
 5. [composition-05-switch-shape-merging](composition-05-switch-shape-merging.md) — `switch` with its ordering rule; shape merging.
 6. [composition-06-unit-failures-try](composition-06-unit-failures-try.md) — per-unit failure reporting in every processor; `try` with no or empty `catch`; `on_error: skip` as sugar; `skips_failed_items`.
 7. [composition-07-catch-worked-example](composition-07-catch-worked-example.md) — `catch` with error metadata; `handles_failed_items`; the spec's worked example end to end.

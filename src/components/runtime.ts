@@ -34,6 +34,8 @@ export interface StepContext {
   sleep(ms: number): Promise<void>;
   // Runs a container's nested steps on a batch.
   runSteps(steps: any[], batch: Message[]): Promise<Message[]>;
+  // Inside pipeline.test, where concurrency is clamped to 1 so mock replies come in a fixed order.
+  testing: boolean;
 }
 
 export type Processor = (config: any, batch: Message[], ctx: StepContext) => Promise<Message[]>;
@@ -149,9 +151,25 @@ const sleep: Processor = async (config, batch, ctx) => {
 };
 
 const forEach: Processor = async (config, batch, ctx) => {
-  const out: Message[] = [];
-  for (const message of batch) out.push(...(await ctx.runSteps(config.steps, [message])));
-  return out;
+  const limit = ctx.testing ? 1 : (config.concurrency ?? 1);
+  const outputs: Message[][] = new Array(batch.length);
+  let next = 0;
+  let failed = false;
+  // The first failure rejects at once; workers stop taking messages, and the run's end cancels
+  // whatever its siblings still have outstanding.
+  const worker = async () => {
+    while (!failed && next < batch.length) {
+      const i = next++;
+      try {
+        outputs[i] = await ctx.runSteps(config.steps, [batch[i]!]);
+      } catch (err) {
+        failed = true;
+        throw err;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, batch.length) }, worker));
+  return outputs.flat();
 };
 
 const filter: Processor = async (config, batch, ctx) => batch.filter((message) => evaluate(config.keep_if, message, ctx.now()));

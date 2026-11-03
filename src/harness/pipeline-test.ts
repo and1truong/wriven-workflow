@@ -6,6 +6,7 @@ import type { Message } from "../executor/messages.ts";
 import type { StateFile } from "../executor/run-state.ts";
 import type { Permissions } from "../pipeline/permissions.ts";
 import type { RunReport } from "../report.ts";
+import { allSteps } from "../pipeline/tree.ts";
 import { RunProcess, type RunJob, type SupervisorEnv } from "../supervisor/supervisor.ts";
 import { truncateResult } from "../tools/truncate.ts";
 
@@ -30,6 +31,14 @@ export interface TestOutcome {
   results: Array<{ title: string; body: string; format: string }>;
   llm_requests: Array<{ step_id: string; message_id: string; system?: string; prompt: string }>;
   logs: NonNullable<RunReport["logs"]>;
+  // Steps whose concurrency ran at 1 here, so mock replies came in a fixed order: "for_each:<id>".
+  clamped: string[];
+}
+
+export function clampedSteps(pipeline: any): string[] {
+  return allSteps(pipeline)
+    .filter((s) => s.config.type === "for_each" && (s.config.concurrency ?? 1) > 1)
+    .map((s) => `${s.config.type}:${s.config.id}`);
 }
 
 function checkParams(params: TestParams): void {
@@ -98,7 +107,7 @@ export async function runPipelineTest(params: TestParams, env: SupervisorEnv, si
   try {
     const report = await process.run();
     if (signal.aborted) throw new RpcError("cancelled", "The test was cancelled.", { reason: "cancelled" });
-    return truncateResult({ status: report.status, report, results, llm_requests: llmRequests, logs: report.logs ?? [] }, MAX_TEST_RESULT_BYTES);
+    return truncateResult({ status: report.status, report, results, llm_requests: llmRequests, logs: report.logs ?? [], clamped: clampedSteps(params.pipeline) }, MAX_TEST_RESULT_BYTES);
   } finally {
     signal.removeEventListener("abort", onAbort);
     track(process, false);

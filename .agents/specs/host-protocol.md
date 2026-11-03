@@ -43,6 +43,7 @@ The host sends `initialize` first; the engine answers nothing else until then (a
 | `sandbox` | `required` (default): no run without OS sandbox. `optional`: runs proceed without it, reports say so, sentences say so. |
 | `capabilities.llm` | Whether the host serves `host.llm`. If false, pipelines containing `host_llm` are invalid for this host. |
 | `capabilities.llm_reports_cost` | Whether `host.llm` responses include `usage.cost_usd`. Affects the cost-limit sentence. |
+| `capabilities.llm_concurrency` | Optional integer from 1 to 8, default 1. The most `host.llm` requests of one run the host will have outstanding at once. A host that does not send it never sees two concurrent calls from one run. More than 1 lets `for_each` with `concurrency` (and `workflow` branches) overlap calls ([composition](composition.md#for_each)); every call is still counted against `llm_calls_per_run` before it is sent, and when a run fails the engine sends `$/cancel` for each call still outstanding. Outside the range: `invalid_params`, reason `invalid_capabilities`. |
 | `capabilities.results` | Whether the host serves `host.result`. |
 | `capabilities.live_network_in_tests` | Whether `pipeline.test` may use `network: "live"`. |
 | `ceilings` | Optional. Each lowers the engine's compiled-in ceiling; a value above the compiled one is `invalid_params`. |

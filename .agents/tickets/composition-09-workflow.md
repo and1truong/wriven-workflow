@@ -17,11 +17,13 @@
   - Output in input order.
 - **Run report.** `skipped` per branch.
 - **Permissions.** An `http_fetch` in any branch of the same workflow sets `receives_fetched_content` for a `host_llm` in any other branch.
+- **Conformance case 11**, moved here from composition-04: a host declaring `llm_concurrency: 2` and holding calls sees two `host.llm` requests from two branches before answering either; fixture, README entry, and the count in `tests/conformance-kit.test.ts`.
 - **Spec updates.**
   - [pipeline-format](../specs/pipeline-format.md): `workflow`, `cycle`, `write_conflict`.
+  - [host-protocol](../specs/host-protocol.md): conformance scenario 11.
   - [permissions](../specs/permissions.md): the derivation rule.
 
-**Blocked by:** [composition-04](composition-04-concurrent-host-llm.md), [composition-08](composition-08-while.md) (for `changes_message_ids`).
+**Blocked by:** [composition-04](completed/2026w45/composition-04-concurrent-host-llm.md), [composition-08](composition-08-while.md) (for `changes_message_ids`).
 
 **Verification:**
 - **Execution:**

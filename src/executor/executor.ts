@@ -69,6 +69,7 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
       else await abortableSleep(ms, world.signal);
     },
     runSteps: (steps, batch) => runList(steps, batch, id),
+    testing: init.trigger === "test",
     llm: world.llm,
     result: world.result,
     fetcher: world.fetcher,
