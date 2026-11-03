@@ -1,6 +1,6 @@
 # Component composition: port gì từ Redpanda Connect
 
-Ghi nhận ngày 2026-11-03. Giai đoạn SDLC: **Plan — đã grilling, chưa viết spec, chưa có ticket, chưa có code.** Bản ghi không phải bằng chứng đã triển khai. Phạm vi v0 ([quyết định 4 của grilling đầu](wriven-workflow.md#quyết-định-sau-grilling-2026-11-03)) không đổi; đây là danh sách cho sau v0.
+Ghi nhận ngày 2026-11-03. Giai đoạn SDLC: **Design — đã grilling ba lượt, đã viết spec, chưa có ticket, chưa có code.** Bản ghi không phải bằng chứng đã triển khai. Phạm vi v0 ([quyết định 4 của grilling đầu](wriven-workflow.md#quyết-định-sau-grilling-2026-11-03)) không đổi; đây là danh sách cho sau v0.
 
 ## Ý định (theo lời Hong)
 
@@ -63,6 +63,15 @@ Cháu hiểu câu thứ nhất là trả lời cho điểm mở 1 và 2: ngườ
 12. **Retry là trường theo từng component, không có wrapper `retry`.** Thay thế quyết định 9. Giữ hình dạng đang có trên `http_fetch` và `host_result` (`{ "max_attempts", "backoff" }`, không có thì không retry) và mở rộng sang component mới khi cần. `host_llm` vẫn không có `retry`; lỗi typed từ host vẫn dừng run.
 
 **Danh sách sau lượt 2:** `condition` (kiểu dùng chung, không phải component), `filter`, `switch`, `split`, `try` (gồm `catch`), `for_each` (có `cap`), `while`, `workflow`, `sleep`, `log`.
+
+## Lượt 3 (2026-11-03): bốn lựa chọn do spec đề xuất
+
+Khi viết [spec composition](../../specs/composition.md), cháu gặp bốn chỗ grilling chưa trả lời và đưa ra bốn lựa chọn. Hong: "Yes cả bốn".
+
+13. **Lỗi trong `try` tính theo đơn vị.** Với `http_fetch`, đơn vị là từng URL của một message; với các component khác, đơn vị là một message. `catch` nhận đơn vị đó đúng như lúc bước bị lỗi nhận nó. Không làm vậy thì ba URL chung một trigger message, một feed lỗi kéo cả ba vào `catch`, hỏng đúng use case đã biện minh cho quyết định 3.
+14. **`on_error: skip` thành cú pháp tắt của `try` với `catch: []`.** Một cơ chế, hai cách viết; tài liệu format `@1` vẫn hợp lệ.
+15. **`host.llm` song song, do host bật qua capability `llm_concurrency` ở `initialize`, mặc định 1.** Quyết định 4 cần chạy song song vì gọi tuần tự chậm. Quyết định 6 của delivery-semantics thì hứa với host chỉ một lời gọi tại một thời điểm. Mặc định 1 giữ lời hứa đó với host nào không xin thêm. Quyết định 6 sẽ được sửa thành "tối đa `llm_concurrency` request `host.llm` đang chờ mỗi run" khi làm ticket `for_each`.
+16. **Thân `while` và các bước của branch `workflow` phải giữ nguyên message id**, kiểm tra lúc validate (`changes_message_ids`). Nhờ đó việc ghi kết quả về message cha và việc xác định message nào còn trong vòng lặp được kiểm tra trước khi chạy, và thứ tự đầu vào được giữ ở mọi chỗ id còn nguyên.
 
 ## Những gì cháu xếp hạng mà danh sách trên chưa có
 

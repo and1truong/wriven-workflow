@@ -1,6 +1,6 @@
 # Composition: conditions, routing, loops, recovery
 
-Source: [composition grilling record](../inbox/2026W45/composition-components.md) (decisions 1–12, 2026-11-03), [ADR 003](../decisions/003-no-expression-language.md), [ADR 006](../decisions/006-delivery-single-ack-strict-idempotent.md), [ADR 008](../decisions/008-mandatory-limits.md), [Benthos research](../research/research-benthos.md) and the Redpanda Connect pages listed in the grilling record (read 2026-11-03). Stage: **Design — spec; nothing implemented. Post-v0.**
+Source: [composition grilling record](../inbox/2026W45/composition-components.md) (decisions 1–16, 2026-11-03), [ADR 003](../decisions/003-no-expression-language.md), [ADR 006](../decisions/006-delivery-single-ack-strict-idempotent.md), [ADR 008](../decisions/008-mandatory-limits.md), [Benthos research](../research/research-benthos.md) and the Redpanda Connect pages listed in the grilling record (read 2026-11-03). Stage: **Design — spec; nothing implemented. Post-v0.**
 
 ## Scope
 
@@ -287,7 +287,7 @@ Inherited from the grilling record:
 6. **`sleep` is bounded by `run_timeout` at validation** (decision 7); **`log` writes to the run report** (decision 8).
 7. **`condition` comes first, regex excluded, missing field is false** (decision 10). **`filter`, `switch`, `split` exist** (decision 11). **Retry is a per-component field** (decision 12).
 
-Proposed in this spec; listed in [open questions](../open-questions.md) for Hong:
+Proposed while writing this spec and accepted by Hong in round 3 of the grilling record (decisions 13–16, 2026-11-03):
 
 8. **Failures in a `try` are attributed to units, and `catch` gets the unit as the failing step saw it.** Without this, three URLs in one `http_fetch` share one trigger message, and one bad feed would send all three to `catch`. That would defeat the use case that justified `catch` in decision 3.
 9. **`on_error: skip` becomes sugar for `try` with `catch: []`.** One mechanism, two spellings. Format `@1` documents stay valid.
