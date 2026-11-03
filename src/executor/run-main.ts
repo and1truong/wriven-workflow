@@ -18,6 +18,9 @@ export async function runMain(): Promise<void> {
     },
     async onRequest(method, params) {
       if (method !== "run") throw new RpcError("method_not_found", `There is no method named ${method}.`);
+      const hook = (params as RunInit).test_hook;
+      const held = hook?.allocate_mb ? Array.from({ length: hook.allocate_mb }, () => Buffer.alloc(1024 * 1024, 1)) : [];
+      void held;
       const outcome = await execute(params as RunInit, {
         signal: cancel.signal,
         llm: (request) => peer.request("host.llm", request).promise,

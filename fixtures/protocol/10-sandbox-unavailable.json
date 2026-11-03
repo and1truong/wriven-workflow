@@ -1,0 +1,23 @@
+{
+  "name": "The sandbox is required and not available",
+  "description": "sandbox-exec cannot be found (the fixture empties PATH). initialize says so, the rendering's last line says so, and run.trigger is refused with sandbox_unavailable.",
+  "env": { "PATH": "/nonexistent" },
+  "steps": [
+    { "send": { "jsonrpc": "2.0", "id": "h-1", "method": "initialize", "params": {
+      "protocol_version": 1, "host": { "name": "conformance", "version": "0", "display_name": "Wriven" }, "clock": "host", "state_dir": "$state_dir", "sandbox": "required",
+      "capabilities": { "llm": true, "llm_reports_cost": false, "results": true, "live_network_in_tests": false }
+    } } },
+    { "expect": { "id": "h-1", "result": { "sandbox": { "available": false, "mechanism": "none" } } } },
+    { "send": { "jsonrpc": "2.0", "id": "h-2", "method": "stream.create", "params": { "pipeline": {
+      "format": "wriven-workflow/pipeline@1", "name": "Nothing", "input": { "type": "host_trigger" }, "processors": [], "output": { "type": "drop" },
+      "limits": { "llm_calls_per_run": 0, "runs_per_day": 2, "run_timeout": "5m" }
+    } } } },
+    { "expect": { "id": "h-2", "result": { "status": "pending_approval", "rendered": ["<string>", "<string>", "<string>", "<string>", "<string>", "OS sandbox: unavailable on this Mac; only the engine's own checks apply."] } }, "capture": { "stream": "/result/stream_id", "hash": "/result/permissions_hash" } },
+    { "send": { "jsonrpc": "2.0", "id": "h-3", "method": "stream.approve", "params": { "stream_id": "$stream", "permissions_hash": "$hash" } } },
+    { "expect": { "id": "h-3", "result": { "status": "active" } } },
+    { "send": { "jsonrpc": "2.0", "id": "h-4", "method": "run.trigger", "params": { "stream_id": "$stream" } } },
+    { "expect": { "id": "h-4", "error": { "code": -32008, "data": { "kind": "sandbox_unavailable", "reason": "<string>" } } } },
+    { "close_stdin": true },
+    { "expect_exit": 0, "within_ms": 5000 }
+  ]
+}

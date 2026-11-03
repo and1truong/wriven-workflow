@@ -5,9 +5,10 @@ import { serve } from "./engine/serve.ts";
 import { runMain } from "./executor/run-main.ts";
 import { fakeHostMain } from "./harness/fake-host-cli.ts";
 import { validateMain } from "./pipeline/validate-cli.ts";
+import { selfTestChild } from "./supervisor/self-test.ts";
 import { versionInfo } from "./version.ts";
 
-const USAGE = "usage: wriven-workflow serve | validate <file> | fake-host [--conformance <dir>] | doctor | --version";
+const USAGE = "usage: wriven-workflow serve | validate <file> | fake-host [--conformance <dir>] | doctor [--self-test] | --version";
 
 async function main(args: string[]): Promise<number> {
   const [command, ...rest] = args;
@@ -23,7 +24,9 @@ async function main(args: string[]): Promise<number> {
     case "fake-host":
       return fakeHostMain(rest);
     case "doctor":
-      return doctorMain();
+      return doctorMain(rest);
+    case "--self-test-child":
+      return selfTestChild(rest[0] ?? "{}");
     case "--version":
       console.log(JSON.stringify(versionInfo()));
       return 0;

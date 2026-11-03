@@ -13,7 +13,6 @@ Two lists. The first is what Hong decides for this repository. The second is wha
 7. **Query strings in approval sentences.** Add "URLs contain query strings" to the rendering when any `http_fetch` URL has one. Small; proposed in [threat-model](specs/threat-model.md) T1.
 8. **Returning the pipeline to the model.** Whether `workflow_get_stream` returns the full pipeline or only sentences. Current answer: full pipeline. ([agent-surface](specs/agent-surface.md#open-points))
 9. **Registry publication.** GitHub releases only, or also npm/JSR. Not needed for Wriven. ([packaging-and-release](specs/packaging-and-release.md#open-points))
-10. **Verify `sandbox-exec` on this Mac.** Not run in this session. Engine-04 is where it happens; if Hong wants it checked before any code, a one-line probe is enough and its output goes into [ADR 004](decisions/004-isolation-process-seatbelt-proxy.md).
 
 ## For the Wriven side (preconditions for integration)
 

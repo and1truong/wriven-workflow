@@ -79,6 +79,13 @@ describe("rendering", () => {
     expect(result.rendered[2]).toBe("Writes results to: nowhere.");
   });
 
+  test("numbers get thousands separators without Intl", async () => {
+    const { groupThousands } = await import("../src/pipeline/duration.ts");
+    expect(groupThousands(10000)).toBe("10,000");
+    expect(groupThousands(999)).toBe("999");
+    expect(groupThousands(1234567)).toBe("1,234,567");
+  });
+
   test("the same pipeline yields the same sentences and hash, byte for byte", () => {
     const a = validatePipeline(basic(), WRIVEN);
     const b = validatePipeline(basic(), WRIVEN);

@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll } from "bun:test";
 import { FakeHost, type FakeHostOptions } from "../src/harness/fake-host.ts";
+import { Engine, type EngineOptions } from "../src/engine/engine.ts";
 
 export const REPO = resolve(import.meta.dir, "..");
 export const BINARY = join(REPO, "dist", "wriven-workflow");
@@ -93,4 +94,36 @@ export function isAlive(pid: number): boolean {
   } catch {
     return false;
   }
+}
+
+// An Engine in this process with a fake clock and test hooks, driving the compiled --run child.
+export async function startInProcess(
+  options: Partial<FakeHostOptions> & { init?: Record<string, unknown>; engine?: Partial<EngineOptions>; dir?: string } = {},
+): Promise<{ host: FakeHost; dir: string; init: any; engine: Engine }> {
+  const dir = options.dir ?? stateDir();
+  const { init: overrides, engine: engineOptions, dir: _dir, ...hostOptions } = options;
+  let engine!: Engine;
+  const host = new FakeHost({
+    ...hostOptions,
+    connect(onLine) {
+      let finish!: (code: number) => void;
+      const exited = new Promise<number>((resolve) => (finish = resolve));
+      engine = new Engine({
+        command: [built],
+        write: (line) => onLine(line.trimEnd()),
+        exit: (code) => finish(code),
+        ...engineOptions,
+      });
+      return {
+        pid: process.pid,
+        exited,
+        write: (line) => engine.peer.receive(line.trimEnd()),
+        closeStdin: () => void engine.onStdinClosed(),
+        kill: () => finish(137),
+      };
+    },
+  });
+  hosts.push(host);
+  const init = await host.call("initialize", initParams(dir, overrides));
+  return { host, dir, init, engine };
 }

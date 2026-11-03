@@ -1,7 +1,7 @@
 // Renders a permissions object into the English sentences a person approves. Code writes these, never
 // the model. Sentence templates: .agents/specs/permissions.md.
 
-import { durationWords } from "./duration.ts";
+import { durationWords, groupThousands } from "./duration.ts";
 import type { Permissions } from "./permissions.ts";
 
 export interface RenderContext {
@@ -13,7 +13,7 @@ export interface RenderContext {
 export const DEFAULT_DISPLAY_NAME = "the host";
 
 function count(n: number, noun: string): string {
-  return `${n.toLocaleString("en-US")} ${noun}${n === 1 ? "" : "s"}`;
+  return `${groupThousands(n)} ${noun}${n === 1 ? "" : "s"}`;
 }
 
 function usd(amount: number): string {

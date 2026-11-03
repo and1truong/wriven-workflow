@@ -15,5 +15,11 @@ export function durationWords(text: string): string {
   const match = /^([0-9]+)([smhd])$/.exec(text);
   if (!match) return text;
   const count = Number(match[1]);
-  return `${count.toLocaleString("en-US")} ${UNIT_WORD[match[2]!]}${count === 1 ? "" : "s"}`;
+  return `${groupThousands(count)} ${UNIT_WORD[match[2]!]}${count === 1 ? "" : "s"}`;
+}
+
+// Not toLocaleString: Intl reads ICU data from the system, which is unreadable under the sandbox, and
+// sentences must be the same bytes everywhere.
+export function groupThousands(n: number): string {
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }

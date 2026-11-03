@@ -19,8 +19,19 @@ export interface ResultScript {
   fail_first?: number;
 }
 
+// How a fake host reaches its engine: a child process, or an Engine in this process (tests).
+export interface EngineTransport {
+  pid: number;
+  exited: Promise<number>;
+  write(line: string): void;
+  closeStdin(): void;
+  kill(): void;
+}
+
 export interface FakeHostOptions {
-  command: string[];
+  command?: string[];
+  // Given the callback for lines from the engine, returns the way to reach it. Replaces `command`.
+  connect?(onLine: (line: string) => void): EngineTransport;
   env?: Record<string, string>;
   cwd?: string;
   llm?: LlmScript;
@@ -38,7 +49,7 @@ export class FakeHost {
   readonly pid: number;
   readonly exited: Promise<number>;
 
-  private readonly process: Bun.PipedSubprocess;
+  private readonly transport: EngineTransport;
   private readonly llmStore = new Map<string, any>();
   private readonly storedResults = new Map<string, any>();
   private readonly held = new Map<string, any>();
@@ -53,24 +64,38 @@ export class FakeHost {
   constructor(private readonly options: FakeHostOptions) {
     this.dropsLeft = options.llm?.drop_responses ?? 0;
     this.resultFailuresLeft = options.result?.fail_first ?? 0;
-    this.process = Bun.spawn([...options.command, "serve"], {
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
-      cwd: options.cwd,
-      env: options.env ?? (process.env as Record<string, string>),
-    }) as Bun.PipedSubprocess;
-    this.pid = this.process.pid;
-    this.exited = this.process.exited.then((code) => {
+    this.transport = options.connect ? options.connect((line) => this.onEngineLine(line)) : this.spawnEngine();
+    this.pid = this.transport.pid;
+    this.exited = this.transport.exited.then((code) => {
       this.exitCode = code;
       this.wake();
       return code;
     });
-    void this.pump(this.process.stdout as ReadableStream<Uint8Array>, (line) => this.onEngineLine(line));
-    void this.pump(this.process.stderr as ReadableStream<Uint8Array>, (line) => {
+  }
+
+  private spawnEngine(): EngineTransport {
+    const child = Bun.spawn([...this.options.command!, "serve"], {
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+      cwd: this.options.cwd,
+      env: this.options.env ?? (process.env as Record<string, string>),
+    }) as Bun.PipedSubprocess;
+    void this.pump(child.stdout as ReadableStream<Uint8Array>, (line) => this.onEngineLine(line));
+    void this.pump(child.stderr as ReadableStream<Uint8Array>, (line) => {
       this.stderr.push(line);
       this.print("stderr", line);
     });
+    return {
+      pid: child.pid,
+      exited: child.exited,
+      write: (line) => {
+        void child.stdin.write(line);
+        void child.stdin.flush();
+      },
+      closeStdin: () => void child.stdin.end(),
+      kill: () => child.kill("SIGKILL"),
+    };
   }
 
   setLlm(script: LlmScript): void {
@@ -86,8 +111,7 @@ export class FakeHost {
 
   sendRaw(line: string): void {
     this.print("host->engine", line.length > 2000 ? `${line.slice(0, 2000)}…` : line);
-    void this.process.stdin.write(`${line}\n`);
-    void this.process.stdin.flush();
+    this.transport.write(`${line}\n`);
   }
 
   // Sends a request and resolves with the whole response message.
@@ -141,11 +165,11 @@ export class FakeHost {
     if (this.stdinClosed) return;
     this.stdinClosed = true;
     this.print("host->engine", "<stdin closed>");
-    void this.process.stdin.end();
+    this.transport.closeStdin();
   }
 
   kill(): void {
-    this.process.kill("SIGKILL");
+    this.transport.kill();
   }
 
   private async pump(stream: ReadableStream<Uint8Array>, onLine: (line: string) => void): Promise<void> {

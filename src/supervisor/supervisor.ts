@@ -7,6 +7,9 @@ import { Peer } from "../protocol/peer.ts";
 import { logLine } from "../log.ts";
 import { ENGINE_VERSION, PIPELINE_FORMAT, REPORT_VERSION } from "../version.ts";
 import { parseDuration } from "../pipeline/duration.ts";
+import { mkdirSync, realpathSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { generateProfile, programPaths } from "./seatbelt.ts";
 import type { RunInit, RunOutcome } from "../executor/messages.ts";
 import type { ReportError, ReportStep, ReportWarning, RunReport, RunTrigger } from "../report.ts";
 
@@ -27,6 +30,8 @@ export interface RunJob {
   input_override: RunInit["input_override"];
 }
 
+const DEFAULT_MEMORY_SAMPLE_MS = 250;
+
 export interface SupervisorEnv {
   hostPeer: Peer;
   // Argv prefix that re-executes this binary.
@@ -35,6 +40,17 @@ export interface SupervisorEnv {
   // How long to wait for the host before treating a response as lost.
   hostResponseMs: number;
   llmReportsCost: boolean;
+  // The path of `sandbox-exec`, or null to run without an OS sandbox.
+  sandboxExec: string | null;
+  // Where runs get their private temp directories: <state_dir>/run-tmp.
+  tempRoot: string;
+  // The stream's directory, for the state files a run may touch. Null in tests, which keep no state.
+  streamDir(streamId: string): string;
+  memoryLimitMb: number;
+  // How often RSS is sampled. A fast spike can pass the limit briefly before the kill (threat model T9).
+  memorySampleMs?: number;
+  // Lets tests shorten what the format's minimums would make slow, and exercise the watchdog.
+  test?: { runTimeoutMs?: number; hook?: RunInit["test_hook"] };
   onStarted(job: RunJob, startedAt: string): void;
   // Replaces the requests the fake world answers in `pipeline.test`.
   hostHandlers?: {
@@ -63,6 +79,9 @@ export class RunProcess {
   private cancelReason: string | null = null;
   private killTimer: Timer | null = null;
   private timeoutTimer: Timer | null = null;
+  private tempDir = "";
+  private sandboxFailure: string | null = null;
+  private exited = false;
 
   constructor(
     readonly job: RunJob,
@@ -73,7 +92,8 @@ export class RunProcess {
     this.startedAt = this.env.now().toISOString();
     this.spawn();
     this.env.onStarted(this.job, this.startedAt);
-    const timeout = parseDuration(this.job.pipeline.limits.run_timeout);
+    void this.watchMemory();
+    const timeout = this.env.test?.runTimeoutMs ?? parseDuration(this.job.pipeline.limits.run_timeout);
     this.timeoutTimer = setTimeout(() => {
       this.killWith({ status: "timed_out", error: this.errorOf("timed_out", `The run passed its limit of ${this.job.pipeline.limits.run_timeout}.`) });
     }, timeout);
@@ -87,6 +107,7 @@ export class RunProcess {
     clearTimeout(this.timeoutTimer);
     if (this.killTimer) clearTimeout(this.killTimer);
     await this.waitForExit();
+    rmSync(this.tempDir, { recursive: true, force: true });
     return this.report(outcome, failure);
   }
 
@@ -110,16 +131,21 @@ export class RunProcess {
 
   private init(): RunInit {
     const { run_id, stream_id, pipeline, trigger, scheduled_for, clock, input_override } = this.job;
-    return { run_id, stream_id, pipeline, trigger, scheduled_for, clock, input_override };
+    return { run_id, stream_id, pipeline, trigger, scheduled_for, clock, input_override, ...(this.env.test?.hook ? { test_hook: this.env.test.hook } : {}) };
   }
 
   private spawn(): void {
-    this.process = Bun.spawn([...this.env.command, "--run"], {
+    this.tempDir = join(this.env.tempRoot, this.job.run_id);
+    mkdirSync(this.tempDir, { recursive: true, mode: 0o700 });
+    this.tempDir = realpathSync(this.tempDir);
+    const command = [realpathSync(this.env.command[0]!), ...this.env.command.slice(1), "--run"];
+    this.process = Bun.spawn(this.env.sandboxExec ? [this.env.sandboxExec, "-p", this.profile(), ...command] : command, {
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
       detached: true,
-      env: {},
+      cwd: this.tempDir,
+      env: { TMPDIR: this.tempDir, HOME: this.tempDir },
     }) as Bun.PipedSubprocess;
     this.peer = new Peer({
       idPrefix: "s-",
@@ -132,15 +158,48 @@ export class RunProcess {
     });
     void this.pump();
     void this.process.exited.then((code) => {
+      this.exited = true;
       // Fails the `run` request when the process died without answering.
       this.peer.close(new RpcError("internal", `The run process exited with code ${code} before finishing.`, { reason: "process_exited" }));
     });
   }
 
+  private profile(): string {
+    const streamId = this.job.stream_id;
+    const dir = streamId ? this.env.streamDir(streamId) : null;
+    return generateProfile({
+      programPaths: programPaths(this.env.command),
+      tempDir: this.tempDir,
+      stateFiles: dir ? [join(dir, "state.json"), join(dir, "state.json.tmp")] : [],
+      proxyPort: null,
+    });
+  }
+
+  private async watchMemory(): Promise<void> {
+    const limitKb = this.env.memoryLimitMb * 1024;
+    const every = this.env.memorySampleMs ?? DEFAULT_MEMORY_SAMPLE_MS;
+    while (!this.exited && !this.terminal) {
+      await Bun.sleep(every);
+      if (this.exited || this.terminal) return;
+      const sample = Bun.spawn(["/bin/ps", "-o", "rss=", "-p", String(this.process.pid)], { stdout: "pipe", stderr: "ignore", stdin: "ignore" });
+      const rss = Number((await new Response(sample.stdout).text()).trim());
+      if (rss > limitKb) {
+        this.killWith({ status: "failed", error: this.errorOf("memory_limit", `The run used ${Math.round(rss / 1024)} MB, past the ceiling of ${this.env.memoryLimitMb} MB.`) });
+        return;
+      }
+    }
+  }
+
   private async pump(): Promise<void> {
     const out = new LineSplitter({ onLine: (line) => this.peer.receive(line), onOversize: () => this.peer.reportOversize() });
     const err = new LineSplitter(
-      { onLine: (line) => logLine("warn", "run process stderr", { run_id: this.job.run_id, line: line.slice(0, 2000) }), onOversize: () => {} },
+      {
+        onLine: (line) => {
+          if (line.startsWith("sandbox-exec:")) this.sandboxFailure = line;
+          logLine("warn", "run process stderr", { run_id: this.job.run_id, line: line.slice(0, 2000) });
+        },
+        onOversize: () => {},
+      },
       64 * 1024,
     );
     const drain = async (stream: ReadableStream<Uint8Array>, splitter: LineSplitter) => {
@@ -271,7 +330,9 @@ export class RunProcess {
     } else {
       status = "failed";
       const exited = failure?.extras.reason === "process_exited";
-      error = this.errorOf(exited ? "process_exited" : (failure?.kind ?? "internal"), failure?.message ?? "The run process stopped without a report.");
+      error = this.sandboxFailure
+        ? this.errorOf("sandbox_unavailable", `The sandbox could not be set up: ${this.sandboxFailure}`)
+        : this.errorOf(exited ? "process_exited" : (failure?.kind ?? "internal"), failure?.message ?? "The run process stopped without a report.");
     }
     if (this.cancelReason !== null && status !== "succeeded" && error) {
       status = "cancelled";
@@ -297,7 +358,7 @@ export class RunProcess {
       network: { requests: 0, bytes: 0, hosts: [], denied: [] },
       results: this.results,
       state: outcome?.state ?? { committed: false, dedupe_keys: 0 },
-      sandbox: "none",
+      sandbox: this.env.sandboxExec ? "seatbelt" : "none",
       engine_version: ENGINE_VERSION,
       ...(status === "cancelled" ? { cancelled_at_step: this.currentStep } : {}),
     };

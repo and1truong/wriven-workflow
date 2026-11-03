@@ -17,6 +17,8 @@ import { newStreamId, StreamStore, type Manifest } from "../state/streams.ts";
 import { ENGINE_NAME, ENGINE_VERSION, PIPELINE_FORMATS, PROTOCOL_VERSIONS, REPORT_VERSION } from "../version.ts";
 import { tryLock } from "./lock.ts";
 import { RunQueue } from "./run-queue.ts";
+import { probeSandbox, type SandboxStatus } from "../supervisor/seatbelt.ts";
+import type { SupervisorEnv } from "../supervisor/supervisor.ts";
 
 export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
 export const DEFAULT_HOST_RESPONSE_MS = 120_000;
@@ -28,6 +30,8 @@ export interface EngineOptions {
   now?(): Date;
   // Argv prefix that re-executes the binary; tests running in-process point it at the compiled one.
   command?: string[];
+  // Only tests in this repository set these.
+  test?: SupervisorEnv["test"] & { memorySampleMs?: number };
 }
 
 export class Engine {
@@ -37,6 +41,8 @@ export class Engine {
   private releaseLock: (() => void) | null = null;
   private stopping: Promise<void> | null = null;
   private streams!: StreamStore;
+  private sandbox!: SandboxStatus;
+  private sandboxRequired = true;
   private queue!: RunQueue;
   private readonly now: () => Date;
 
@@ -122,7 +128,9 @@ export class Engine {
     }
     this.releaseLock = release;
     mkdirSync(join(stateDir, "streams"), { recursive: true, mode: 0o700 });
-    const sandboxAvailable = Bun.which("sandbox-exec") !== null;
+    this.sandbox = probeSandbox();
+    this.sandboxRequired = params.sandbox !== "optional";
+    const sandboxAvailable = this.sandbox.available;
     const capabilities = params.capabilities ?? {};
     this.context = {
       clock: params.clock,
@@ -139,6 +147,12 @@ export class Engine {
       now: this.now,
       hostResponseMs,
       llmReportsCost: this.context.llmReportsCost,
+      sandboxExec: sandboxAvailable ? this.sandbox.path : null,
+      tempRoot: join(stateDir, "run-tmp"),
+      streamDir: (streamId) => this.streams.dir(streamId),
+      memoryLimitMb: ceilings.run_memory_mb,
+      memorySampleMs: this.options.test?.memorySampleMs,
+      test: this.options.test,
       onStarted: (job, startedAt) => {
         this.peer.notify("run.started", { run_id: job.run_id, stream_id: job.stream_id, trigger: job.trigger, scheduled_for: job.scheduled_for, started_at: startedAt });
       },
@@ -296,8 +310,15 @@ export class Engine {
       throw new RpcError("permission_denied", "This stream's permissions have not been approved.");
     }
     if (manifest.status === "paused") throw new RpcError("conflict", "This stream is paused.", { reason: "paused" });
+    this.requireSandbox();
     const scheduledFor = typeof params.scheduled_for === "string" ? params.scheduled_for : null;
     return this.queue.enqueue(manifest, { trigger: "host", scheduled_for: scheduledFor, collapsible: true });
+  }
+
+  private requireSandbox(): void {
+    if (!this.sandbox.available && this.sandboxRequired) {
+      throw new RpcError("sandbox_unavailable", "This host requires the OS sandbox and it is not available.", { reason: this.sandbox.reason });
+    }
   }
 
   private async shutdown(params: any): Promise<unknown> {
