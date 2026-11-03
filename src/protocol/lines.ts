@@ -2,6 +2,9 @@
 // the connection carries on with the next line.
 
 export const MAX_LINE_BYTES = 4 * 1024 * 1024;
+// Between the engine and its run process: both ends are this binary and the limit that protects anyone
+// is the public one above. Large enough for a run's whole input (fixtures, a pipeline, a state file).
+export const MAX_PRIVATE_LINE_BYTES = 128 * 1024 * 1024;
 const NEWLINE = 10;
 
 export interface LineHandlers {
@@ -62,8 +65,8 @@ export class LineSplitter {
   }
 }
 
-export async function readLines(stream: ReadableStream<Uint8Array>, handlers: LineHandlers): Promise<void> {
-  const splitter = new LineSplitter(handlers);
+export async function readLines(stream: ReadableStream<Uint8Array>, handlers: LineHandlers, maxBytes = MAX_LINE_BYTES): Promise<void> {
+  const splitter = new LineSplitter(handlers, maxBytes);
   for await (const chunk of stream) splitter.push(chunk);
 }
 

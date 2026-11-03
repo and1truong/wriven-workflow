@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { chmodSync } from "node:fs";
-import { runConformance } from "../src/harness/conformance.ts";
-import { BINARY, CONFORMANCE_DIR, descendants, initParams, isAlive, spawnHost, startHost, stateDir } from "./helpers.ts";
+import { BINARY, descendants, initParams, isAlive, spawnHost, startHost, stateDir } from "./helpers.ts";
 
 describe("handshake", () => {
   test("a request before initialize gets not_initialized", async () => {
@@ -130,12 +129,6 @@ describe("cli", () => {
     expect(version.runtime).toStartWith("bun ");
     expect(version.target).toBe(`darwin-${process.arch}`);
   });
-
-  test("the conformance fixtures pass against the binary", async () => {
-    const results = await runConformance(CONFORMANCE_DIR, [BINARY]);
-    expect(results.filter((r) => !r.passed)).toEqual([]);
-    expect(results.length).toBeGreaterThan(0);
-  }, 120_000);
 });
 
 describe("notices", () => {

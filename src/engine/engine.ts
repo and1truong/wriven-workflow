@@ -1,7 +1,7 @@
 // The `serve` process: handshake, method table and lifecycle. Business logic lives in the modules it
 // calls; this file decides what is allowed when.
 
-import { mkdirSync, realpathSync, statSync } from "node:fs";
+import { mkdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { publicComponents } from "../components/definitions.ts";
 import { logLine, type LogLevel } from "../log.ts";
@@ -9,6 +9,7 @@ import { effectiveCeilings, type Ceilings } from "../pipeline/ceilings.ts";
 import { DURATION_PATTERN, parseDuration } from "../pipeline/duration.ts";
 import { DEFAULT_DISPLAY_NAME } from "../pipeline/render.ts";
 import { canonicalJson } from "../pipeline/canonical.ts";
+import { REPORT_SCHEMA } from "../report.ts";
 import { pipelineSchema } from "../pipeline/schema.ts";
 import { isSubset, sentenceDiff } from "../pipeline/subset.ts";
 import { validatePipeline, type ValidationContext } from "../pipeline/validate.ts";
@@ -156,6 +157,8 @@ export class Engine {
     }
     this.releaseLock = release;
     mkdirSync(join(stateDir, "streams"), { recursive: true, mode: 0o700 });
+    // Left behind if an earlier engine died mid-run. We hold the lock, so nothing is using it.
+    rmSync(join(stateDir, "run-tmp"), { recursive: true, force: true });
     this.sandbox = probeSandbox();
     this.sandboxRequired = params.sandbox !== "optional";
     const sandboxAvailable = this.sandbox.available;
@@ -184,11 +187,17 @@ export class Engine {
       memorySampleMs: this.options.test?.memorySampleMs,
       injectClock: this.options.now !== undefined,
       test: this.options.test,
+      log: (level, msg, fields) => this.log(level, msg, fields),
       onStarted: (job, startedAt) => {
+        this.log("info", "run started", { run_id: job.run_id, stream_id: job.stream_id });
         this.peer.notify("run.started", { run_id: job.run_id, stream_id: job.stream_id, trigger: job.trigger, scheduled_for: job.scheduled_for, started_at: startedAt });
       },
     };
-    this.queue = new RunQueue({ ...this.supervisorEnv, emitFinished: (report) => this.peer.notify("run.finished", { report }) });
+    this.queue = new RunQueue({ ...this.supervisorEnv, emitFinished: (report) => {
+        this.log("info", "run finished", { run_id: report.run_id, stream_id: report.stream_id, status: report.status });
+        this.peer.notify("run.finished", { report });
+      },
+    });
     if (params.clock === "engine") {
       this.scheduler = new Scheduler({
         now: this.now,
@@ -198,6 +207,7 @@ export class Engine {
       if (!this.options.test?.noSchedulerTimer) this.scheduler.start();
     }
     this.initialized = true;
+    this.log("info", "engine initialized", { clock: params.clock, sandbox: sandboxAvailable ? "seatbelt" : "none" });
     return {
       protocol_version: params.protocol_version,
       engine: { name: ENGINE_NAME, version: ENGINE_VERSION },
@@ -219,6 +229,7 @@ export class Engine {
       format: PIPELINE_FORMATS[0],
       ceilings: this.context.ceilings,
       pipeline_schema: pipelineSchema(),
+      report_schema: REPORT_SCHEMA,
     };
   }
 

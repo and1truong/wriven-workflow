@@ -2,7 +2,7 @@
 
 Vertical slices for v0, in dependency order. Each is a tracer bullet: it crosses every layer it needs and is demonstrable on its own against the fake host. Blockers are listed in each ticket; the chain below is the intended order, with 09 and 10 able to run in parallel with 04–07 once 03 is done. Finished tickets move to `completed/YYYYwNN/`.
 
-All derive from the [specs](../specs/README.md); none is started.
+All derive from the [specs](../specs/README.md). Engine-01 to engine-11 are done; engine-12 is built and waits for Hong's review of `docs/host-integration.md`.
 
 ## Engine v0
 

@@ -73,7 +73,7 @@ export class Peer {
     if (!this.send({ jsonrpc: "2.0", id, method, params })) {
       const waiter = this.pending.get(id)!;
       this.pending.delete(id);
-      waiter.reject(new RpcError("internal", `The ${method} request is larger than the protocol's line limit.`, { reason: "message_too_large" }));
+      waiter.reject(new RpcError("invalid_request", `The ${method} request is larger than the protocol's line limit.`, { reason: "message_too_large" }));
     }
     return { id, promise };
   }
@@ -116,7 +116,7 @@ export class Peer {
       try {
         const result = await this.options.onRequest(method, params ?? {}, { id, signal: controller.signal });
         if (!this.send({ jsonrpc: "2.0", id, result: result ?? {} })) {
-          this.sendError(id, new RpcError("internal", `The ${method} result is larger than the protocol's line limit.`, { reason: "message_too_large" }));
+          this.sendError(id, new RpcError("invalid_request", `The ${method} result is larger than the protocol's line limit.`, { reason: "message_too_large" }));
         }
       } catch (err) {
         this.sendError(id, toRpcError(err));

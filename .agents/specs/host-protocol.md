@@ -72,7 +72,7 @@ All take and return JSON objects. Errors use the vocabulary below.
 
 | Method | Params | Result | Notes |
 | --- | --- | --- | --- |
-| `components.list` | `{}` | `{ components, pipeline_schema }` | Same as in `initialize`, plus the full JSON Schema of the current format version. |
+| `components.list` | `{ kind? }` | `{ components, format, ceilings, pipeline_schema, report_schema }` | Same as in `initialize`, plus the full JSON Schemas of the current format and the run report. |
 | `pipeline.validate` | `{ pipeline }` | `{ valid, errors[], warnings[], permissions?, rendered? }` | Never touches network or state. |
 | `pipeline.test` | `{ pipeline, input?, llm?, fixtures?, network?, clock?, state?, run_embedded? }` | `{ status, report, results[], llm_requests[] }` | Runs once in a sandboxed run process with the harness; see [agent-surface](agent-surface.md#pipeline-tests). `network` defaults to `mock`; `live` requires the host capability. |
 | `stream.create` | `{ pipeline, start_paused?, schedule_description? }` | `{ stream_id, status: "pending_approval", permissions, permissions_hash, rendered }` | Validates first; returns `invalid_pipeline` on failure. |
@@ -146,7 +146,7 @@ JSON-RPC `error` objects: `code` is an integer in the range -32000 to -32099 for
 
 The engine never retries a `host.llm` error of any kind. It passes `retry_after` through into the report.
 
-A report's `error.kind` may also be one of these, which are never RPC errors because no request failed: `process_exited` (the run process died), `memory_limit`, `unresolved_pointer` and `shape_mismatch` (a pointer that could only be checked at run time), `http_status`, `url_not_allowed`, `fixture_missing`, `feed_invalid`, `state_invalid`.
+A report's `error.kind` may also be one of these, which are never RPC errors because no request failed: `process_exited` (the run process died), `memory_limit`, `unresolved_pointer` and `shape_mismatch` (a pointer that could only be checked at run time), `http_status`, `fetch_failed`, `fetch_timeout`, `body_too_large`, `url_not_allowed`, `fixture_missing`, `feed_invalid`, `state_invalid`.
 
 ## Run report
 

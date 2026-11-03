@@ -8,7 +8,7 @@ How the engine is built into one executable per architecture, signed, checked, v
 
 ## Observable behaviour
 
-- A release is a set of files: `wriven-workflow-<version>-darwin-arm64.tar.gz`, `wriven-workflow-<version>-darwin-x64.tar.gz`, `SHA256SUMS`, and `release-notes.md`. Each archive contains one executable, `LICENSE`, `THIRD_PARTY_NOTICES.md`, and `fixtures/protocol/` for host conformance testing.
+- A release is a set of files: `wriven-workflow-<version>-darwin-arm64.tar.gz`, `wriven-workflow-<version>-darwin-x64.tar.gz`, `SHA256SUMS`, and `release-notes.md`. Each archive contains one executable, `LICENSE`, `THIRD_PARTY_NOTICES.md`, `fixtures/protocol/` for host conformance testing, and `schemas/` with the published JSON Schemas of the pipeline format and the run report.
 - The executable runs with no installation step beyond `chmod +x`; it needs no Node, Bun or npm on the machine, and it reads no configuration files on start.
 - `wriven-workflow --version` prints `{ "engine": "0.1.0", "protocol_versions": [1], "pipeline_formats": ["wriven-workflow/pipeline@1"], "report_version": 1, "runtime": "bun 1.4.x", "target": "darwin-arm64", "commit": "…" }`.
 - `wriven-workflow doctor` prints whether `sandbox-exec` is present and whether a minimal Seatbelt profile compiles and enforces (it tries to read a denied path and connect to a denied port from a child), whether the proxy can bind, and the sizes and versions above. Exit code 0 only if the sandbox works, so a host can refuse to install an engine that cannot isolate.

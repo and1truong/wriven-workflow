@@ -7,6 +7,8 @@ import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writ
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { COMPONENTS } from "../src/components/definitions.ts";
+import { pipelineSchema } from "../src/pipeline/schema.ts";
+import { REPORT_SCHEMA } from "../src/report.ts";
 import { MEASURED_WITH } from "../src/supervisor/seatbelt-allowances.ts";
 import { ENGINE_VERSION, PIPELINE_FORMATS, PROTOCOL_VERSIONS, REPORT_VERSION } from "../src/version.ts";
 import { disallowed, readNotices, renderNotices } from "./notices.ts";
@@ -125,6 +127,9 @@ for (const target of TARGETS) {
   copyFileSync(join(REPO, "LICENSE"), join(stage, "LICENSE"));
   copyFileSync(noticesPath, join(stage, "THIRD_PARTY_NOTICES.md"));
   cpSync(join(REPO, "fixtures", "protocol"), join(stage, "fixtures", "protocol"), { recursive: true });
+  mkdirSync(join(stage, "schemas"));
+  writeFileSync(join(stage, "schemas", "pipeline-1.json"), `${JSON.stringify(pipelineSchema(), null, 2)}\n`);
+  writeFileSync(join(stage, "schemas", "run-report-1.json"), `${JSON.stringify(REPORT_SCHEMA, null, 2)}\n`);
   run(["tar", "-czf", join(OUT, archive), "-C", stage, "."]);
 
   // Check what actually ships: extract it and run that.

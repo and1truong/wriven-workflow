@@ -8,10 +8,13 @@ Two lists. The first is what Hong decides for this repository. The second is wha
 2. **`collect` as the eleventh component.** Added during spec writing because the feed example cannot make one model call for many items without it. Confirm, or name an alternative. ([pipeline-format](specs/pipeline-format.md), grilling decision 4)
 3. **Concurrent runs.** The spec says one run at a time per engine. Should "Run now" be allowed to run alongside a scheduled run of another stream? ([architecture](specs/architecture.md#open-points))
 5. **`run_all` missed policy.** Keep it in v0 or drop it since `runs_per_day` already bounds it. ([scheduling](specs/scheduling.md#open-points))
-6. **Memory ceiling.** 512 MB RSS per run process is a placeholder until the feed example is measured. ([architecture](specs/architecture.md#open-points))
+6. **Memory ceiling.** 512 MB RSS per run process was a placeholder. Peak RSS measured 2026-11-03 on a Mac15,7, macOS 27.0.1, Bun 1.4.3, through the private protocol with fixtures: the example at 3 feeds of 100 KB, 35 MB; 20 feeds of 2 MB, 365 MB; 20 feeds of 5 MB (the format's ceiling), 827 MB, so a pipeline at the very ceiling is killed with `memory_limit`. Recommendation: keep 512. ([architecture](specs/architecture.md#open-points))
 7. **Query strings in approval sentences.** Add "URLs contain query strings" to the rendering when any `http_fetch` URL has one. Small; proposed in [threat-model](specs/threat-model.md) T1.
 8. **Returning the pipeline to the model.** Whether `workflow_get_stream` returns the full pipeline or only sentences. Current answer: full pipeline. ([agent-surface](specs/agent-surface.md#open-points))
 9. **Registry publication.** GitHub releases only, or also npm/JSR. Not needed for Wriven. ([packaging-and-release](specs/packaging-and-release.md#open-points))
+
+10. **Review `docs/host-integration.md`** against the Wriven inbox's preconditions: the last step of engine-12. ([host integration](../docs/host-integration.md))
+11. **Developer tooling.** Bun is pinned at 1.4.3, what this machine has, and its test runner names itself `1.4.3-canary.1`. x64 builds have never been executed here because Rosetta is not installed. Decide whether to upgrade Bun and install Rosetta before a first release. ([packaging-and-release](specs/packaging-and-release.md))
 
 ## For the Wriven side (preconditions for integration)
 

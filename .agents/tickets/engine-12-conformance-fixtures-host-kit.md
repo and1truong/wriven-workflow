@@ -8,9 +8,10 @@
 
 **Verification:** `fake-host --conformance fixtures/protocol` reports 10/10 against the release binary. The schema-subset test passes. The three threat-model tests pass. `docs/host-integration.md` is reviewed by Hong against the Wriven inbox's list of preconditions and every precondition has a section.
 
-**Status:** not started
+**Status:** built 2026-11-03; open only for the review below, which is Hong's
 
-- [ ] Fixtures 1–10 complete and documented
-- [ ] Schema-subset test, three encodings
-- [ ] Remaining threat-model tests
-- [ ] `docs/host-integration.md`
+- [x] Fixtures 1–10 complete and documented
+- [x] Schema-subset test, three encodings
+- [x] Remaining threat-model tests
+- [x] `docs/host-integration.md`
+- [ ] Hong reviews `docs/host-integration.md` against the Wriven inbox's preconditions

@@ -1,10 +1,10 @@
 // Spawns, watches and kills one run process, forwards its host requests, and assembles the report.
 // The run process is not trusted with the numbers: calls, cost and results are counted here.
 
-import { LineSplitter } from "../protocol/lines.ts";
+import { LineSplitter, MAX_PRIVATE_LINE_BYTES } from "../protocol/lines.ts";
 import { RpcError, toRpcError } from "../protocol/errors.ts";
 import { Peer } from "../protocol/peer.ts";
-import { logLine } from "../log.ts";
+import type { LogLevel } from "../log.ts";
 import { ENGINE_VERSION, PIPELINE_FORMAT, REPORT_VERSION } from "../version.ts";
 import { parseDuration } from "../pipeline/duration.ts";
 import { mkdirSync, realpathSync, rmSync } from "node:fs";
@@ -65,6 +65,7 @@ export interface SupervisorEnv {
   injectClock: boolean;
   // Lets tests shorten what the format's minimums would make slow, and exercise the watchdog.
   test?: { runTimeoutMs?: number; hook?: RunInit["test_hook"]; dial?: ProxyOptions["dial"] };
+  log(level: LogLevel, msg: string, fields?: Record<string, unknown>): void;
   onStarted(job: RunJob, startedAt: string): void;
   // Replaces the requests the fake world answers in `pipeline.test`.
   hostHandlers?: {
@@ -176,6 +177,7 @@ export class RunProcess {
     }) as Bun.PipedSubprocess;
     this.peer = new Peer({
       idPrefix: "s-",
+      maxLineBytes: MAX_PRIVATE_LINE_BYTES,
       write: (line) => {
         void this.process.stdin.write(line);
         void this.process.stdin.flush();
@@ -218,12 +220,12 @@ export class RunProcess {
   }
 
   private async pump(): Promise<void> {
-    const out = new LineSplitter({ onLine: (line) => this.peer.receive(line), onOversize: () => this.peer.reportOversize() });
+    const out = new LineSplitter({ onLine: (line) => this.peer.receive(line), onOversize: () => this.killGroup() }, MAX_PRIVATE_LINE_BYTES);
     const err = new LineSplitter(
       {
         onLine: (line) => {
           if (line.startsWith("sandbox-exec:")) this.sandboxFailure = line;
-          logLine("warn", "run process stderr", { run_id: this.job.run_id, line: line.slice(0, 2000) });
+          this.env.log("warn", "run process stderr", { run_id: this.job.run_id, line: line.slice(0, 2000) });
         },
         onOversize: () => {},
       },

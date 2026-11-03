@@ -2,7 +2,7 @@
 // It reaches the world only through its parent over stdio.
 
 import { RpcError } from "../protocol/errors.ts";
-import { readLines, StdoutWriter } from "../protocol/lines.ts";
+import { MAX_PRIVATE_LINE_BYTES, readLines, StdoutWriter } from "../protocol/lines.ts";
 import { Peer } from "../protocol/peer.ts";
 import { fixtureFetcher, proxyFetcher } from "../components/http-fetch.ts";
 import { execute } from "./executor.ts";
@@ -14,6 +14,7 @@ export async function runMain(): Promise<void> {
   const peer: Peer = new Peer({
     write: (line) => out.write(line),
     idPrefix: "r-",
+    maxLineBytes: MAX_PRIVATE_LINE_BYTES,
     onNotification(method) {
       if (method === "cancel") cancel.abort();
     },
@@ -42,8 +43,8 @@ export async function runMain(): Promise<void> {
   });
   await readLines(Bun.stdin.stream(), {
     onLine: (line) => peer.receive(line),
-    onOversize: () => peer.reportOversize(),
-  });
+    onOversize: () => process.exit(1),
+  }, MAX_PRIVATE_LINE_BYTES);
   // The engine is gone. No run process outlives its parent.
   process.exit(1);
 }

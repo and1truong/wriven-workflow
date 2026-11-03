@@ -2,7 +2,27 @@
 
 A small stream processor that an AI agent drives on behalf of a person, so that "every weekday at 8:00, summarize the new posts from these three feeds" becomes a pipeline that can be validated, tested with fake input, approved in plain English, run under an OS sandbox, paused, edited with a diff, and rolled back.
 
-**Status: design only.** This repository holds the plan and the specifications. There is no code yet, nothing has been built or measured except where a document says so and names the date. Decisions are recorded under [`.agents/`](.agents/); the integration contract for a host application is [`.agents/specs/host-protocol.md`](.agents/specs/host-protocol.md).
+**Status: v0 built, not integrated.** The engine runs the feed example end to end against a fake host, under the sandbox and proxy, and passes its protocol conformance fixtures. No real host has spoken to it, and it has not fetched from the open web. Decisions are recorded under [`.agents/`](.agents/); the integration contract for a host application is [`.agents/specs/host-protocol.md`](.agents/specs/host-protocol.md), and [`docs/host-integration.md`](docs/host-integration.md) is how to meet it.
+
+```bash
+bun install
+```
+
+```bash
+bun test
+```
+
+```bash
+bun run build && dist/wriven-workflow doctor --self-test
+```
+
+```bash
+dist/wriven-workflow test fixtures/pipelines/valid/feed-digest.json
+```
+
+```bash
+dist/wriven-workflow fake-host --conformance fixtures/protocol
+```
 
 ## What it is
 
@@ -29,10 +49,13 @@ A small stream processor that an AI agent drives on behalf of a person, so that 
 | Path | What |
 | --- | --- |
 | [`AGENTS.md`](AGENTS.md) | How to work in this repository: workflow, language, principles |
+| [`src/`](src/) | The engine: `protocol`, `engine`, `pipeline`, `components`, `executor`, `supervisor`, `scheduler`, `state`, `harness`, `tools` |
+| [`fixtures/`](fixtures/) | Pipelines, feeds, test certificates and [protocol conformance scenarios](fixtures/protocol/README.md) |
+| [`docs/host-integration.md`](docs/host-integration.md) | How a host integrates the engine, with what Wriven has today and lacks |
 | [`.agents/inbox/`](.agents/inbox/README.md) | The original intent and the grilling record, in Vietnamese |
 | [`.agents/specs/`](.agents/specs/README.md) | Specifications: architecture, pipeline format, delivery semantics, permissions, host protocol, agent surface, scheduling, packaging, threat model |
 | [`.agents/decisions/`](.agents/decisions/README.md) | Architecture decision records for the choices with large trade-offs |
-| [`.agents/tickets/`](.agents/tickets/README.md) | Vertical slices in dependency order; the first one runs a minimal pipeline against a fake host |
+| [`.agents/tickets/`](.agents/tickets/README.md) | Vertical slices in dependency order; finished ones under `completed/` |
 | [`.agents/research/`](.agents/research/) | What was read on the web, with URLs and dates, and what was measured |
 | [`.agents/open-questions.md`](.agents/open-questions.md) | What Hong still has to decide, and what the Wriven side must do before integration |
 

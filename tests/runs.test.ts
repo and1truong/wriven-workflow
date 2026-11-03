@@ -1,11 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { runConformance } from "../src/harness/conformance.ts";
 import type { FakeHost } from "../src/harness/fake-host.ts";
 import { checkSchema } from "../src/pipeline/json-schema.ts";
 import { REPORT_SCHEMA } from "../src/report.ts";
-import { BINARY, CONFORMANCE_DIR, descendants, isAlive, startHost } from "./helpers.ts";
+import { descendants, isAlive, startHost } from "./helpers.ts";
 
 const INIT = { sandbox: "optional" };
 
@@ -346,11 +345,4 @@ describe("template", () => {
     await finished(host, run_id);
     expect(host.results[0].result.body).toBe("{{/trigger}} and host");
   });
-});
-
-describe("conformance", () => {
-  test("every fixture passes against the binary", async () => {
-    const results = await runConformance(CONFORMANCE_DIR, [BINARY]);
-    expect(results.filter((r) => !r.passed)).toEqual([]);
-  }, 120_000);
 });

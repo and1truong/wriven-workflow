@@ -140,6 +140,44 @@ describe("pipeline.test", () => {
     expect(response.error.data.kind).toBe("cancelled");
   }, 30_000);
 
+  test("a run's input larger than a public line does not stall; a prompt over the line limit fails the run", async () => {
+    const { host } = await startInProcess({});
+    // A 3 MiB string fits a public line; the prompt built from it twice does not.
+    const body = "x".repeat(3 * 1024 * 1024);
+    const pipeline = {
+      format: "wriven-workflow/pipeline@1",
+      name: "Big prompt",
+      input: { type: "inject", messages: [{ data: { a: body } }] },
+      processors: [
+        { id: "prompt", type: "template", target: "/prompt", text: "{{/a}}{{/a}}" },
+        { id: "ask", type: "host_llm", prompt: "/prompt", target: "/reply" },
+      ],
+      output: { type: "drop" },
+      limits: { llm_calls_per_run: 1, runs_per_day: 1, run_timeout: "1m" },
+    };
+    // In a test the fake model takes any prompt; the run still has to answer.
+    const tested = await host.call("pipeline.test", { pipeline });
+    expect(tested.status).toBe("succeeded");
+    expect(tested.truncated).toBe(true);
+    expect(tested.llm_requests[0].prompt.truncated).toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(tested.tool_result))).toBeLessThanOrEqual(32 * 1024);
+
+    // Against a real host the prompt cannot fit a line: the run fails at once and says why.
+    const { input: _input, ...stream } = pipeline;
+    const created = await host.call("stream.create", {
+      pipeline: { ...stream, name: "Big", input: { type: "host_trigger" }, processors: [
+        { id: "seed", type: "template", target: "/a", text: "y".repeat(19_000) },
+        { id: "double", type: "template", target: "/b", text: "{{/a}}".repeat(250) },
+        { id: "ask", type: "host_llm", prompt: "/b", target: "/reply" },
+      ] },
+    });
+    await host.call("stream.approve", { stream_id: created.stream_id, permissions_hash: created.permissions_hash });
+    const { run_id } = await host.call("run.trigger", { stream_id: created.stream_id });
+    const finished = await host.waitFor((m) => m.method === "run.finished" && m.params.report.run_id === run_id, 20_000);
+    expect(finished.params.report.status).toBe("failed");
+    expect(finished.params.report.error).toMatchObject({ kind: "invalid_request", reason: "message_too_large", step_id: "ask" });
+  }, 60_000);
+
   test("the sandbox requirement holds for tests", async () => {
     const { host } = await startHost({ env: { PATH: "/nonexistent" } });
     const response = await host.request("pipeline.test", { pipeline: EXAMPLE, fixtures: FIXTURES });
