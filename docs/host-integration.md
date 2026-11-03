@@ -26,7 +26,7 @@ That checks the engine. To check your host, replay the same scenarios from your 
 
 ## Where the binary lives
 
-Wriven is a bare executable with no `.app` bundle, so there is no "inside" for it yet. The options are in [packaging](../.agents/specs/packaging-and-release.md#installation-by-a-host); the binary is 62.5 MB on arm64 (measured 2026-11-03). A user-installed engine inherits Wriven's `PATH`-under-Finder limitation; spawn it by absolute path. The engine locates `sandbox-exec` through `PATH` in the environment you give it, so keep `/usr/bin` on that `PATH`, or it will report the sandbox unavailable.
+Wriven is a bare executable with no `.app` bundle, so there is no "inside" for it yet. The options are in [packaging](../.agents/specs/packaging-and-release.md#installation-by-a-host); the binary is 62.6 MB on arm64 (measured 2026-11-03). A user-installed engine inherits Wriven's `PATH`-under-Finder limitation; spawn it by absolute path. The engine locates `sandbox-exec` through `PATH` in the environment you give it, so keep `/usr/bin` on that `PATH`, or it will report the sandbox unavailable.
 
 ## Spawning and process handling
 
