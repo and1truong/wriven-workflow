@@ -106,6 +106,7 @@ const httpFetch: ComponentDef = {
   type: "http_fetch",
   kind: "processor",
   summary: "Fetch pages over HTTPS from listed hosts, one message per URL.",
+  failCodes: ["http_status", "fetch_failed", "fetch_timeout", "body_too_large"],
   properties: {
     urls: { type: "array", minItems: 1, maxItems: 20, items: { type: "string" } },
     headers: {
@@ -146,6 +147,7 @@ const parseFeed: ComponentDef = {
   type: "parse_feed",
   kind: "processor",
   summary: "Read /body as RSS or Atom and emit one message per entry, with HTML turned into plain text.",
+  failCodes: ["feed_invalid"],
   properties: {
     max_entries: { type: "integer", minimum: 1, maximum: 500 },
     on_error: { enum: ["fail", "skip"] },
@@ -568,6 +570,6 @@ export function componentSchema(def: ComponentDef, published = false): Record<st
   };
 }
 
-export function publicComponents(): Array<{ type: string; kind: string; schema: Record<string, any>; summary: string }> {
-  return COMPONENTS.map((def) => ({ type: def.type, kind: def.kind, schema: componentSchema(def, true), summary: def.summary }));
+export function publicComponents(): Array<{ type: string; kind: string; schema: Record<string, any>; summary: string; fail_codes?: string[] }> {
+  return COMPONENTS.map((def) => ({ type: def.type, kind: def.kind, schema: componentSchema(def, true), summary: def.summary, ...(def.failCodes ? { fail_codes: def.failCodes } : {}) }));
 }

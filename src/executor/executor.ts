@@ -12,7 +12,7 @@ export interface ExecutorWorld {
   signal: AbortSignal;
   llm: StepContext["llm"];
   result: StepContext["result"];
-  warn(warning: { step_id: string; message_id: string | null; code: string; message: string; caught_by?: string }): void;
+  warn(warning: { step_id: string; message_id: string | null; code: string; message: string; caught_by?: string; mocked?: boolean }): void;
   log(entry: { step_id: string; message_id: string; text: string }): void;
   fetcher: Fetcher | null;
   network(host: string, bytes: number): void;
@@ -65,6 +65,7 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
   // Per workflow step: how many messages each branch skipped, summed over invocations.
   const skips = new Map<string, Record<string, { skipped: number }>>();
   const context = (id: string, onFailure: FailureHandler | null, iterations: number[]): StepContext => ({
+    ...(init.mocks?.[id] ? { mock: init.mocks[id] } : {}),
     runId: init.run_id,
     stepId: id,
     signal: world.signal,
@@ -109,9 +110,12 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
     try {
       // on_error: skip is a try with an empty catch around this one step, reported as v0 did.
       const handler: FailureHandler | null =
-        config.on_error === "skip" ? (unit, err, stepId) => world.warn({ step_id: stepId, message_id: unit.id, code: err.kind, message: err.message }) : onFailure;
-      const mock = init.mocks?.[config.id];
-      out = mock ? runMock(config, mock, batch) : await processorFor(config.type)(config, batch, context(config.id, handler, iterations));
+        config.on_error === "skip"
+          ? (unit, err, stepId) => world.warn({ step_id: stepId, message_id: unit.id, code: err.kind, message: err.message, ...(err.extras.mocked ? { mocked: true } : {}) })
+          : onFailure;
+      const mock = config.type === "host_llm" ? undefined : init.mocks?.[config.id];
+      const ctx = context(config.id, handler, iterations);
+      out = mock ? runMock(config, mock, batch, ctx) : await processorFor(config.type)(config, batch, ctx);
     } catch (err) {
       failedAt ??= config.id;
       throw err;
@@ -163,7 +167,7 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
 }
 
 // Failures of the run itself, of the host, or of the test are never a unit's to recover from.
-const UNCATCHABLE = new Set(["cancelled", "fixture_missing", "internal", "budget_exceeded", "timed_out", "memory_limit"]);
+const UNCATCHABLE = new Set(["cancelled", "fixture_missing", "mock_unmatched", "internal", "budget_exceeded", "timed_out", "memory_limit"]);
 
 function isCatchable(err: unknown): err is StepError {
   return err instanceof StepError && err.extras.from_host !== true && !UNCATCHABLE.has(err.kind);

@@ -2,7 +2,7 @@
 
 Vertical slices for v0, in dependency order. Each is a tracer bullet: it crosses every layer it needs and is demonstrable on its own against the fake host. Blockers are listed in each ticket; the chain below is the intended order, with 09 and 10 able to run in parallel with 04–07 once 03 is done. Finished tickets move to `completed/YYYYwNN/`.
 
-All derive from the [specs](../specs/README.md). All twelve v0 tickets and all nine composition tickets are done and live under `completed/`; the test-mocks tickets below are open.
+All derive from the [specs](../specs/README.md). All twelve v0 tickets, the nine composition tickets and the two test-mocks tickets are done and live under `completed/`.
 
 ## Composition (post-v0)
 
@@ -23,7 +23,7 @@ From [composition](../specs/composition.md). Each ticket updates the specs its "
 From [test-mocks](../specs/test-mocks.md). Each ticket updates the specs it names, in the same commit. Order: 01, then 02. Independent of the composition chain, except that 02's `try` check needs composition-06.
 
 1. [test-mocks-01-step-mocks](completed/2026w45/test-mocks-01-step-mocks.md) (done) — `mocks` keyed by step id: fixed `messages` on any processor, `replies` on `host_llm`; the narrowing shape check; `mocked` in the report.
-2. [test-mocks-02-cases-fail](test-mocks-02-cases-fail.md) — `cases` chosen by `when` per unit, `fail` with declared catchable codes, `mock_unmatched`; the spec's worked example.
+2. [test-mocks-02-cases-fail](completed/2026w45/test-mocks-02-cases-fail.md) (done) — `cases` chosen by `when` per unit, `fail` with declared catchable codes, `mock_unmatched`; the spec's worked example.
 
 ## Engine v0
 

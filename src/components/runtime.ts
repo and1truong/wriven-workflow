@@ -28,7 +28,7 @@ export interface StepContext {
   state: RunState;
   // Tells the run that state changed, so a successful run writes it.
   stateTouched(): void;
-  llm(request: { step_id: string; message_id: string; iteration?: string; system?: string; messages: Array<{ role: "user"; content: string }>; max_output_tokens?: number }): Promise<any>;
+  llm(request: { step_id: string; message_id: string; iteration?: string; mock_case?: number; system?: string; messages: Array<{ role: "user"; content: string }>; max_output_tokens?: number }): Promise<any>;
   result(request: { message_id: string; result: { title: string; body: string; format: string } }): Promise<any>;
   // Appends a line to the run report's logs.
   log(messageId: string, text: string): void;
@@ -46,10 +46,12 @@ export interface StepContext {
   // takes it; then the processor carries on without that unit. `stepId` names the failing step when
   // a container passes on a failure from inside it.
   unitFailed(unit: Message, err: unknown, stepId?: string): void;
+  // This step's test mock, when it is a host_llm the harness answers.
+  mock?: StepMock;
   // How many messages a workflow branch skipped, for the report.
   countSkipped(branchId: string, count: number): void;
   // A warning on behalf of another step, as a try reports what it caught.
-  warnFor(warning: { step_id: string; message_id: string | null; code: string; message: string; caught_by?: string }): void;
+  warnFor(warning: { step_id: string; message_id: string | null; code: string; message: string; caught_by?: string; mocked?: boolean }): void;
 }
 
 export type FailureHandler = (unit: Message, err: StepError, stepId: string) => void;
@@ -114,12 +116,15 @@ const template: Processor = async (config, batch, ctx) =>
 const hostLlm: Processor = async (config, batch, ctx) =>
   perMessage(batch, ctx, async (message) => {
     const prompt = readString(message, config.prompt, "prompt");
+    // Under a test mock the harness answers from the case picked here, where the message is known.
+    const mockCase = ctx.mock ? pickCase(ctx.mock, { id: message.id, data: { prompt, ...(config.system !== undefined ? { system: config.system } : {}) }, meta: message.meta }, ctx) : undefined;
     let reply: any;
     try {
       reply = await ctx.llm({
         step_id: ctx.stepId,
         message_id: message.id,
         ...(ctx.iterations.length > 0 ? { iteration: ctx.iterations.join(".") } : {}),
+        ...(mockCase !== undefined ? { mock_case: mockCase } : {}),
         ...(config.system !== undefined ? { system: config.system } : {}),
         messages: [{ role: "user", content: prompt }],
         ...(config.max_output_tokens !== undefined ? { max_output_tokens: config.max_output_tokens } : {}),
@@ -317,23 +322,46 @@ const workflowProcessor: Processor = async (config, batch, ctx) => {
   return batch.filter((m) => !failed.has(m.id));
 };
 
-// A step replaced by a test mock: it does not run, and per unit emits the mock's messages, numbered as
-// the real component numbers what it emits. Spec: .agents/specs/test-mocks.md.
-export function runMock(config: any, mock: NonNullable<RunInit["mocks"]>[string], batch: Message[]): Message[] {
+type StepMock = NonNullable<RunInit["mocks"]>[string];
+
+// The first case whose `when` holds for a unit, seen as `view`; none is a mistake in the test.
+function pickCase(mock: StepMock, view: Message, ctx: StepContext): number {
+  const index = mock.cases.findIndex((c) => c.when === undefined || evaluate(c.when, view, ctx.now()));
+  if (index < 0) throw new StepError("mock_unmatched", `No case of the mock of ${ctx.stepId} matches ${view.id}; it has ${mock.cases.length} cases.`, { message_id: view.id });
+  return index;
+}
+
+// A step replaced by a test mock: it does not run. Per unit it picks a case and emits its messages,
+// numbered as the real component numbers what it emits, or fails as the real step would.
+// Spec: .agents/specs/test-mocks.md.
+export function runMock(config: any, mock: StepMock, batch: Message[], ctx: StepContext): Message[] {
   const out: Message[] = [];
-  const emit = (meta: Record<string, string>, id: (k: number, of: number) => string, extra: Record<string, string> = {}) => {
-    mock.messages.forEach((m, k) => out.push({ id: id(k, mock.messages.length), data: structuredClone(m.data), meta: { ...meta, ...m.meta, ...extra } }));
+  const unit = (view: Message, failing: Message, meta: Record<string, string>, id: (k: number, of: number) => string, extra: Record<string, string> = {}) => {
+    const chosen = mock.cases[pickCase(mock, view, ctx)]!;
+    if (chosen.fail) {
+      ctx.unitFailed(failing, new StepError(chosen.fail.code, chosen.fail.message ?? "Mocked failure.", { message_id: failing.id, mocked: true }));
+      return;
+    }
+    const messages = chosen.messages ?? [];
+    messages.forEach((m, k) => out.push({ id: id(k, messages.length), data: structuredClone(m.data), meta: { ...meta, ...m.meta, ...extra } }));
   };
   if (config.type === "http_fetch") {
     for (const message of batch) {
-      (config.urls as string[]).forEach((url, i) => emit(message.meta, (k, of) => (of === 1 ? `${message.id}.${i}` : `${message.id}.${i}.${k}`), { source_url: url }));
+      (config.urls as string[]).forEach((url, i) => {
+        const failing = { id: `${message.id}.${i}`, data: structuredClone(message.data), meta: { ...message.meta, source_url: url } };
+        unit({ id: failing.id, data: { url }, meta: message.meta }, failing, message.meta, (k, of) => (of === 1 ? `${message.id}.${i}` : `${message.id}.${i}.${k}`), { source_url: url });
+      });
     }
   } else if (config.type === "collect") {
-    if (batch.length > 0) emit(batch[0]!.meta, (k, of) => (of === 1 ? `${batch[0]!.id}.c` : `${batch[0]!.id}.c.${k}`));
+    const first = batch[0];
+    if (first) {
+      const view = { id: first.id, data: { items: batch.map((m) => m.data), count: batch.length }, meta: first.meta };
+      unit(view, first, first.meta, (k, of) => (of === 1 ? `${first.id}.c` : `${first.id}.c.${k}`));
+    }
   } else if (preservesIds(config)) {
-    for (const message of batch) emit(message.meta, () => message.id);
+    for (const message of batch) unit(message, message, message.meta, () => message.id);
   } else {
-    for (const message of batch) emit(message.meta, (k) => `${message.id}.${k}`);
+    for (const message of batch) unit(message, message, message.meta, (k) => `${message.id}.${k}`);
   }
   return out;
 }
@@ -346,7 +374,7 @@ const tryProcessor: Processor = async (config, batch, ctx) => {
   const failed: Message[] = [];
   const out = await ctx.runSteps(config.steps, batch, {
     onFailure: (unit, err, stepId) => {
-      ctx.warnFor({ step_id: stepId, message_id: unit.id, code: err.kind, message: err.message, caught_by: ctx.stepId });
+      ctx.warnFor({ step_id: stepId, message_id: unit.id, code: err.kind, message: err.message, caught_by: ctx.stepId, ...(err.extras.mocked ? { mocked: true } : {}) });
       failed.push({ ...unit, meta: { ...unit.meta, error_step: stepId, error_code: err.kind, error_message: err.message } });
     },
   });

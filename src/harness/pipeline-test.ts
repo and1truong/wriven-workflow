@@ -7,7 +7,7 @@ import type { StateFile } from "../executor/run-state.ts";
 import type { Permissions } from "../pipeline/permissions.ts";
 import type { RunReport } from "../report.ts";
 import { allSteps } from "../pipeline/tree.ts";
-import type { Mock } from "../pipeline/mocks.ts";
+import { mockCases, type Mock } from "../pipeline/mocks.ts";
 import { RunProcess, type RunJob, type SupervisorEnv } from "../supervisor/supervisor.ts";
 import { truncateResult } from "../tools/truncate.ts";
 
@@ -73,9 +73,8 @@ export async function runPipelineTest(params: TestParams, env: SupervisorEnv, si
   let answered = 0;
   // host_llm mocks are answered here, so the supervisor still counts the call and records the prompt;
   // only mocks that emit messages travel to the run process.
-  const mocks = params.mocks ?? {};
+  const mocks = Object.fromEntries(Object.entries(params.mocks ?? {}).map(([id, m]) => [id, { cases: mockCases(m) }]));
   const replied = new Map<string, number>();
-  const messageMocks = Object.fromEntries(Object.entries(mocks).filter(([, m]) => m.messages !== undefined)) as RunJob["mocks"];
   const overrides: Message[] | null = params.input?.messages
     ? params.input.messages.map((m, i) => ({ id: `m${i + 1}`, data: structuredClone(m.data), meta: { ...m.meta } }))
     : null;
@@ -94,7 +93,7 @@ export async function runPipelineTest(params: TestParams, env: SupervisorEnv, si
     input_override: overrides,
     fixtures: params.network === "live" ? null : (params.fixtures ?? {}),
     initial_state: params.state ?? { version: 1, seen: {} },
-    mocks: messageMocks,
+    mocks: mocks as RunJob["mocks"],
   };
   const process = new RunProcess(job, {
     ...env,
@@ -102,11 +101,12 @@ export async function runPipelineTest(params: TestParams, env: SupervisorEnv, si
       async llm(request: any) {
         const prompt: string = request.messages[0].content;
         llmRequests.push({ step_id: request.step_id, message_id: request.message_id, ...(request.system !== undefined ? { system: request.system } : {}), prompt });
-        const mocked = mocks[request.step_id]?.replies;
+        const mocked = mocks[request.step_id]?.cases[request.mock_case]?.replies;
         let text: string;
         if (mocked) {
-          const used = replied.get(request.step_id) ?? 0;
-          replied.set(request.step_id, used + 1);
+          const key = `${request.step_id}#${request.mock_case}`;
+          const used = replied.get(key) ?? 0;
+          replied.set(key, used + 1);
           text = mocked[Math.min(used, mocked.length - 1)]!;
         } else {
           text = responses ? responses[Math.min(answered++, responses.length - 1)]! : `[mock reply] ${prompt}`;

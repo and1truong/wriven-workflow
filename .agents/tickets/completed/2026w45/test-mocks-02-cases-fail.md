@@ -1,6 +1,6 @@
 # test-mocks-02: cases chosen by `when`, `fail`, `mock_unmatched`
 
-**Spec:** [test-mocks](../specs/test-mocks.md) (format, what `when` sees, validation, worked example), [composition](../specs/composition.md#condition) (the `condition` type).
+**Spec:** [test-mocks](../../../specs/test-mocks.md) (format, what `when` sees, validation, worked example), [composition](../../../specs/composition.md#condition) (the `condition` type).
 
 **To build:** conditional mocks on top of test-mocks-01.
 - **`cases[]`.** Each case has an optional `when` and exactly one of `messages`, `replies`, `fail`. The first true case wins; a case without `when` must be last. The shorthand forms of test-mocks-01 become one default case. Ceiling: 20 cases per mock.
@@ -9,9 +9,9 @@
 - **`mock_unmatched`.** No case matches: the run fails with that kind, naming the step, the unit and the case count. `on_error: skip` does not skip it and no `try` catches it.
 - **Validation:** `invalid_mock` for no or two outcomes in a case, a default case not last, more than 20 cases, a `fail.code` the component does not declare, `fail` on `host_llm`. The narrowing walk counts only `messages` cases.
 - **Worked example** added as a second embedded test in `fixtures/pipelines/valid/feed-digest-filter.json`.
-- **Spec updates:** [host-protocol](../specs/host-protocol.md) (`mock_unmatched` among the report-only error kinds), [composition](../specs/composition.md) (`mock_unmatched` among what `try` cannot catch; the test-harness section points to per-step `replies`), [agent-surface](../specs/agent-surface.md) and [pipeline-format](../specs/pipeline-format.md) (`cases`, `fail`).
+- **Spec updates:** [host-protocol](../../../specs/host-protocol.md) (`mock_unmatched` among the report-only error kinds), [composition](../../../specs/composition.md) (`mock_unmatched` among what `try` cannot catch; the test-harness section points to per-step `replies`), [agent-surface](../../../specs/agent-surface.md) and [pipeline-format](../../../specs/pipeline-format.md) (`cases`, `fail`).
 
-**Blocked by:** [test-mocks-01](completed/2026w45/test-mocks-01-step-mocks.md). The `try` case below needs [composition-06](completed/2026w45/composition-06-unit-failures-try.md); whichever of the two lands second adds it.
+**Blocked by:** [test-mocks-01](test-mocks-01-step-mocks.md). The `try` case below needs [composition-06](composition-06-unit-failures-try.md); whichever of the two lands second adds it.
 
 **Verification:**
 - **Behaviour:**
@@ -27,9 +27,11 @@
   - a `parse` mock whose second case lacks `id` gives `mock_missing_field`; adding a `fail` case to it does not.
 - **Regression:** every embedded test from test-mocks-01 passes unchanged.
 
-**Status:** open
+**Status:** done 2026-11-03
 
-- [ ] `cases`, `when` views and their validation
-- [ ] Declared catchable codes; `fail` through `on_error: skip` and plain failure
-- [ ] `mock_unmatched`; worked example fixture
-- [ ] Specs updated
+- [x] `cases`, `when` views and their validation
+- [x] Declared catchable codes (`failCodes` on components, `fail_codes` in `components.list`); `fail` through `on_error: skip`, `try` and plain failure
+- [x] `mock_unmatched`; worked example as the second embedded test of `fixtures/pipelines/valid/feed-digest-filter.json`
+- [x] Specs updated (host-protocol, composition, agent-surface, pipeline-format) and the tool description
+
+The run process picks every case, `host_llm` included: it renders the prompt, evaluates `when` on `{ prompt, system? }` with the message's own `meta`, fails with `mock_unmatched` itself, and sends the chosen case index with the call; the harness answers from that case's replies. The supervisor passes the index on only in test runs. Tests: `tests/test-mocks-cases.test.ts`.

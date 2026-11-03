@@ -110,7 +110,7 @@ This is the inverse of `collect`: a model that returns a JSON list (after a pars
 - **Output.** The output of `steps`, followed by the output of `catch`, as one batch. Shape: the two merged. `catch` itself validates against the merge of the shapes the top-level steps of `steps` receive, since a unit fails at one of them; when `steps` holds a container, against `unknown`.
 - **`catch` missing.** A failure fails the run, so `try` without `catch` only groups steps. **`catch: []`**: the failed units are dropped, deliberately.
 - **What can be caught**: the failures `on_error: skip` can skip today, generalised to every component. That is, processor errors attributable to one unit: fetch failures, `permission_denied` on a redirect, feed parse errors, `unresolved_pointer`, `condition_type_mismatch`, a non-array at `split`.
-- **What cannot be caught**: typed errors from the host at `host_llm` or `host_result`, `budget_exceeded`, `timed_out`, `memory_limit`, `cancelled`, `fixture_missing` (a mistake in the test, as `http_fetch` already treats it) and `internal`. These end the run as before. Otherwise `catch` would be a back door around "no retry, no fallback by default".
+- **What cannot be caught**: typed errors from the host at `host_llm` or `host_result`, `budget_exceeded`, `timed_out`, `memory_limit`, `cancelled`, `fixture_missing` (a mistake in the test, as `http_fetch` already treats it), `mock_unmatched` (likewise, [test-mocks](test-mocks.md)) and `internal`. These end the run as before. Otherwise `catch` would be a back door around "no retry, no fallback by default".
 - **Failures inside `catch`** follow the normal rules, so they fail the run unless a `try` nested in the `catch` handles them.
 - **Every caught failure is also a warning** in the run report (`{ step, message_id, code, message }`, code as raised, plus `"caught_by": "<try id>"`), so recovery never hides a failure from the report.
 - **`on_error: skip`** on `http_fetch` and `parse_feed` stays valid in format `@1` and means exactly a `try` with `catch: []` around that one step.
@@ -223,7 +223,7 @@ All additions are additive to the report schema.
 
 ## Test harness
 
-- `llm.mode: "mock"` answers in call order. Concurrency would make that order nondeterministic, so under `pipeline.test` every `concurrency` and the workflow branch concurrency are clamped to 1, and the result says so in a field `clamped: ["for_each:<id>", ...]`. Concurrency itself is covered by the engine's own tests against the fake host.
+- `llm.mode: "mock"` answers in call order; a test that needs replies per step, or per prompt, mocks that `host_llm` with `replies` ([test-mocks](test-mocks.md)). Concurrency would make that order nondeterministic, so under `pipeline.test` every `concurrency` and the workflow branch concurrency are clamped to 1, and the result says so in a field `clamped: ["for_each:<id>", ...]`. Concurrency itself is covered by the engine's own tests against the fake host.
 - `sleep` advances the fake clock.
 - Embedded test `expect` gains `logs_contain?: [string]`.
 

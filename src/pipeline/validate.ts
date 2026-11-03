@@ -107,6 +107,7 @@ export function walker(pipeline: any, ctx: ValidationContext): ShapeWalk {
   return (overrides) => {
     const errors: PipelineIssue[] = [];
     const warnings: PipelineIssue[] = [];
+    const inputs = new Map<string, Shape>();
     const outputs = new Map<string, Shape>();
     const walkList = (steps: any[], basePath: string, start: Shape, before?: Shape[]): Shape => {
       let shape = start;
@@ -118,7 +119,10 @@ export function walker(pipeline: any, ctx: ValidationContext): ShapeWalk {
     };
     const walkStep = (config: any, path: string, shape: Shape): Shape => {
       const out = stepShape(config, path, shape);
-      if (config.id !== undefined) outputs.set(config.id, out);
+      if (config.id !== undefined) {
+        inputs.set(config.id, shape);
+        outputs.set(config.id, out);
+      }
       return out;
     };
     const stepShape = (config: any, path: string, shape: Shape): Shape => {
@@ -131,7 +135,7 @@ export function walker(pipeline: any, ctx: ValidationContext): ShapeWalk {
     };
     const shape = walkList(pipeline.processors, "/processors", walkStep(pipeline.input, "/input", UNKNOWN));
     walkStep(pipeline.output, "/output", shape);
-    return { outputs, errors, warnings };
+    return { inputs, outputs, errors, warnings };
   };
 }
 

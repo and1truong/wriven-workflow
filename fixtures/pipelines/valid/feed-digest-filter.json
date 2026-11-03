@@ -102,6 +102,94 @@
         ],
         "warnings_count": 0
       }
+    },
+    {
+      "name": "one feed down, alpha posts summarised",
+      "mocks": {
+        "fetch": {
+          "cases": [
+            {
+              "when": {
+                "field": "/url",
+                "equals": "https://news.example.net/atom.xml"
+              },
+              "fail": {
+                "code": "http_status",
+                "message": "503"
+              }
+            },
+            {
+              "messages": [
+                {
+                  "data": {}
+                }
+              ]
+            }
+          ]
+        },
+        "parse": {
+          "cases": [
+            {
+              "when": {
+                "field": "meta:source_url",
+                "equals": "https://example.com/feed.xml"
+              },
+              "messages": [
+                {
+                  "data": {
+                    "id": "a1",
+                    "title": "Alpha a1",
+                    "link": "https://example.com/a1"
+                  }
+                },
+                {
+                  "data": {
+                    "id": "a2",
+                    "title": "Alpha a2",
+                    "link": "https://example.com/a2"
+                  }
+                }
+              ]
+            },
+            {
+              "when": {
+                "field": "meta:source_url",
+                "equals": "https://blog.example.org/rss"
+              },
+              "messages": [
+                {
+                  "data": {
+                    "id": "b1",
+                    "title": "Beta b1",
+                    "link": "https://blog.example.org/b1"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "summarize": {
+          "cases": [
+            {
+              "when": {
+                "field": "/prompt",
+                "contains": "Alpha a2"
+              },
+              "replies": [
+                "The digest."
+              ]
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": "succeeded",
+        "results_count": 1,
+        "result_body_contains": [
+          "The digest."
+        ],
+        "warnings_count": 1
+      }
     }
   ]
 }

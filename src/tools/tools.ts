@@ -47,7 +47,7 @@ export const TOOLS: ToolDefinition[] = [
         mocks: {
           type: "object",
           description:
-            "Replace processor steps by id: { step_id: { messages: [{ data, meta? }] } } emitted per unit instead of running the step (per URL for http_fetch), or { replies: [text] } for a host_llm, whose prompt is still rendered and counted. Mock messages need only the fields later steps read.",
+            "Replace processor steps by id: { step_id: { messages: [{ data, meta? }] } } emitted per unit instead of running the step (per URL for http_fetch), { replies: [text] } for a host_llm, whose prompt is still rendered and counted, or { fail: { code, message? } } with a code from the component's fail_codes. { cases: [{ when, ... }] } picks per unit by a condition; no match fails with mock_unmatched. Mock messages need only the fields later steps read.",
         },
         run_embedded: { type: "boolean", description: "Run the pipeline's own tests[] instead, and report each." },
       },

@@ -305,6 +305,7 @@ export class RunProcess {
           code: bounded(params.code),
           message: bounded(params.message),
           ...(params.caught_by !== undefined ? { caught_by: bounded(params.caught_by) } : {}),
+          ...(params.mocked === true ? { mocked: true } : {}),
         });
       }
     } else if (method === "log") {
@@ -371,6 +372,8 @@ export class RunProcess {
       idempotency_key: key,
       ...(step.system !== undefined ? { system: step.system } : {}),
       messages: [{ role: "user", content: prompt }],
+      // Only a test's fake world reads it; a stream's host never sees it.
+      ...(this.job.trigger === "test" && Number.isInteger(params.mock_case) ? { mock_case: params.mock_case } : {}),
       ...(step.max_output_tokens !== undefined ? { max_output_tokens: step.max_output_tokens } : {}),
     });
     const { reply, attempt } = await this.askHost("host.llm", request, this.env.hostHandlers?.llm);

@@ -21,6 +21,8 @@ export interface ReportWarning {
   message: string;
   // The try that caught this failure.
   caught_by?: string;
+  // The failure came from a test mock's fail case.
+  mocked?: boolean;
 }
 
 export interface ReportLog {
@@ -113,7 +115,7 @@ export const REPORT_SCHEMA: JsonSchema = {
       items: {
         type: "object",
         required: ["step_id", "message_id", "code", "message"],
-        properties: { step_id: { type: "string" }, message_id: { type: ["string", "null"] }, code: { type: "string" }, message: { type: "string" }, caught_by: { type: "string" } },
+        properties: { step_id: { type: "string" }, message_id: { type: ["string", "null"] }, code: { type: "string" }, message: { type: "string" }, caught_by: { type: "string" }, mocked: { type: "boolean" } },
       },
     },
     steps: {
