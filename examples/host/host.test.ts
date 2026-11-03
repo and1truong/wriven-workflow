@@ -2,22 +2,23 @@
 // no network, no key, no money.
 
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
 import { ERROR_CODES } from "../../src/protocol/errors.ts";
 import { Agent, type ModelClient } from "./agent.ts";
 import { ExampleHost } from "./host.ts";
-import { ScriptedProvider, toHostError } from "./provider.ts";
+import { estimateCost, ScriptedProvider, toHostError } from "./provider.ts";
 import { HOST_ERROR_CODES, HostError } from "./rpc.ts";
 
 const REPO = resolve(import.meta.dir, "../..");
 const BINARY = join(REPO, "dist", "wriven-workflow");
 const HELLO = JSON.parse(readFileSync(join(import.meta.dir, "pipelines", "hello.json"), "utf8"));
 
-if (!existsSync(BINARY)) {
-  const out = Bun.spawnSync(["bun", "run", "build"], { cwd: REPO, stdout: "pipe", stderr: "pipe" });
+// Always rebuilt, as tests/helpers.ts does: an old binary would test the example against an old engine.
+{
+  const out = Bun.spawnSync(["bun", "build", "--compile", "src/main.ts", "--outfile", BINARY], { cwd: REPO, stdout: "pipe", stderr: "pipe" });
   if (out.exitCode !== 0) throw new Error(`engine build failed: ${out.stderr}`);
 }
 
@@ -112,6 +113,19 @@ describe("provider errors", () => {
     const error = toHostError(apiError(429, "rate_limit_error", "30"));
     expect(error.kind).toBe("rate_limited");
     expect(Date.parse(error.extras.retry_after as string)).toBeGreaterThan(Date.now());
+  });
+});
+
+describe("cost estimates", () => {
+  test("Haiku 5.5 costs more for prompts over 100 000 tokens", () => {
+    expect(estimateCost("claude-haiku-5-5", 150_000, 1_000)).toBeCloseTo(0.0775, 10);
+    expect(estimateCost("claude-haiku-5-5", 50_000, 1_000)).toBeCloseTo(0.0055, 10);
+  });
+
+  test("Opus and Sonnet 5.5 have one price; an unknown model has none", () => {
+    expect(estimateCost("claude-opus-5-5", 150_000, 1_000)).toBeCloseTo(0.62, 10);
+    expect(estimateCost("claude-sonnet-5-5", 1_000_000, 0)).toBeCloseTo(2, 10);
+    expect(estimateCost("some-other-model", 1_000, 1_000)).toBeUndefined();
   });
 });
 

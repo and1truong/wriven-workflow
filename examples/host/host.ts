@@ -113,17 +113,17 @@ export class ExampleHost {
   // What the person sees before anything runs.
   async approvalCard(streamId: string): Promise<ApprovalCard | null> {
     const stream = await this.call("stream.get", { stream_id: streamId });
-    // A widening update waits in `pending`, next to the approved sentences it would replace; a
-    // new stream waits at the top level.
+    // A widening update waits in `pending` with its diff against what was approved; a new stream
+    // waits at the top level.
     const waiting = stream.pending ?? (stream.status === "pending_approval" ? stream : null);
     if (!waiting) return null;
-    const card: ApprovalCard = { stream_id: streamId, name: stream.name, rendered: waiting.rendered, permissions_hash: waiting.permissions_hash };
-    if (stream.pending) {
-      const before = new Set<string>(stream.rendered);
-      const after = new Set<string>(waiting.rendered);
-      card.diff = { added: waiting.rendered.filter((s: string) => !before.has(s)), removed: stream.rendered.filter((s: string) => !after.has(s)) };
-    }
-    return card;
+    return {
+      stream_id: streamId,
+      name: stream.name,
+      rendered: waiting.rendered,
+      permissions_hash: waiting.permissions_hash,
+      ...(waiting.diff ? { diff: waiting.diff } : {}),
+    };
   }
 
   // The person said yes to exactly this card. A stale hash gets `conflict` from the engine, so a

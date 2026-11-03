@@ -47,7 +47,7 @@ From the grilling record:
 
 ## Changes to other specs
 
-- [host-protocol](host-protocol.md): `stream.get`'s `pending` gains `diff: { added, removed }`, the same object `stream.update` returned when it moved the stream to `pending_approval`. Ticket example-host-01.
+- [host-protocol](host-protocol.md): `stream.get`'s `pending` gains `diff: { added, removed }`, the same object `stream.update` returned when it moved the stream to `pending_approval`. Done in example-host-01.
 - [docs/host-integration.md](../../docs/host-integration.md): the restart sentence names the diff.
 
 ## Risks

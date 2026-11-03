@@ -24,18 +24,27 @@ export interface Provider {
   complete(request: CompletionRequest): Promise<Completion>;
 }
 
-// Published per-token prices in USD per million tokens. Source: the claude-api skill's model table,
-// cached 2026-10-06; not verified against https://platform.claude.com/docs/en/about-claude/pricing.
-// An estimate for the run report, not the bill. A model missing here reports no cost.
-const PRICES: Record<string, { input: number; output: number }> = {
+// Base prices in USD per million input / output tokens, from
+// https://platform.claude.com/docs/en/about-claude/pricing, read 2026-11-03. Caching, batch and
+// US-only inference prices are not modelled: this host uses none of them. An estimate for the run
+// report, not the bill. A model missing here reports no cost.
+interface Price {
+  input: number;
+  output: number;
+  // A higher price for the whole request when the prompt is longer than `above` input tokens.
+  longPrompt?: { above: number; input: number; output: number };
+}
+
+const PRICES: Record<string, Price> = {
   "claude-opus-5-5": { input: 4, output: 20 },
   "claude-sonnet-5-5": { input: 2, output: 10 },
-  "claude-haiku-5-5": { input: 0.1, output: 0.5 },
+  "claude-haiku-5-5": { input: 0.1, output: 0.5, longPrompt: { above: 100_000, input: 0.5, output: 2.5 } },
 };
 
 export function estimateCost(model: string, inputTokens: number, outputTokens: number): number | undefined {
-  const price = PRICES[model];
-  if (!price) return undefined;
+  const base = PRICES[model];
+  if (!base) return undefined;
+  const price = base.longPrompt && inputTokens > base.longPrompt.above ? base.longPrompt : base;
   return (inputTokens * price.input + outputTokens * price.output) / 1_000_000;
 }
 

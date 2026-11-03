@@ -22,9 +22,9 @@ From [composition](../specs/composition.md). Each ticket updates the specs its "
 
 From [example-host](../specs/example-host.md). The example was built before its spec (commit `be50038`); these tickets cover what the grilling changed. 01 and 02 are independent; 03 after both, and blocked on credentials.
 
-1. [example-host-01-stream-get-pending-diff](example-host-01-stream-get-pending-diff.md) — `stream.get` returns the diff of a waiting update; the example stops computing its own.
-2. [example-host-02-cost-source-haiku-tier](example-host-02-cost-source-haiku-tier.md) — price table cites the pricing page and date; Haiku 5.5's long-prompt price.
-3. [example-host-03-live-run](example-host-03-live-run.md) — one live `run` and one `chat` turn against Claude, recorded in the example's README.
+1. [example-host-01-stream-get-pending-diff](completed/2026w45/example-host-01-stream-get-pending-diff.md) (done) — `stream.get` returns the diff of a waiting update; the example stops computing its own.
+2. [example-host-02-cost-source-haiku-tier](completed/2026w45/example-host-02-cost-source-haiku-tier.md) (done) — price table cites the pricing page and date; Haiku 5.5's long-prompt price.
+3. [example-host-03-live-run](example-host-03-live-run.md) (open, blocked on credentials) — one live `run` and one `chat` turn against Claude, recorded in the example's README.
 
 ## Test mocks
 

@@ -495,10 +495,23 @@ export class Engine {
       permissions_hash: m.permissions_hash,
       rendered: this.sentences(m, m),
       ...(previous ? { previous_pipeline: previous.pipeline } : {}),
-      ...(m.pending ? { pending: { pipeline: m.pending.pipeline, permissions: m.pending.permissions, permissions_hash: m.pending.permissions_hash, rendered: this.sentences(m.pending, m) } } : {}),
+      ...(m.pending ? { pending: this.pendingOf(m, m.pending) } : {}),
       created_at: m.created_at,
       updated_at: m.updated_at,
       next_run: this.scheduler?.nextRun(m) ?? null,
+    };
+  }
+
+  // A widening update waiting for approval, with the diff stream.update returned for it, so a host
+  // that restarted can show the same card.
+  private pendingOf(m: Manifest, pending: PinnedPipeline) {
+    const rendered = this.sentences(pending, m);
+    return {
+      pipeline: pending.pipeline,
+      permissions: pending.permissions,
+      permissions_hash: pending.permissions_hash,
+      rendered,
+      diff: sentenceDiff(rendered, this.sentences(m, m)),
     };
   }
 

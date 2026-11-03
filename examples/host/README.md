@@ -59,7 +59,7 @@ bun test
 
 - **No retries in the provider client** (`maxRetries: 0`). A failure reaches the engine as a typed error and shows in the report, which matches the engine's own rule. A host may decide otherwise.
 - **Claude Opus 5.5 for both** the pipeline's model calls (effort `low`) and the chat (effort `high`), with server-side refusal fallback (`fallbacks: "default"`). The reply reports the model that actually served it.
-- **Cost is an estimate** from published per-token prices in `provider.ts`, taken from the claude-api skill's model table cached 2026-10-06 and not verified against the pricing page. A model missing from the table reports no cost.
+- **Cost is an estimate** from the base prices in `provider.ts`, read from https://platform.claude.com/docs/en/about-claude/pricing on 2026-11-03, including Haiku 5.5's higher price for prompts over 100 000 tokens. Caching, batch and US-only inference prices are not modelled. A model missing from the table reports no cost.
 - **The idempotency record lives in memory.** It must outlive a lost response within a run, which it does; it does not survive a host restart, and neither does the run, since the engine is the host's child.
 
 ## Not here
@@ -72,4 +72,4 @@ This directory is its own package so that nothing it needs reaches the engine bi
 
 ## What was run
 
-On 2026-11-03, on macOS 27.0.1 with Bun 1.4.3: `bun test` here (8 tests) and `bun main.ts run pipelines/hello.json --offline`, both against the engine binary with the Seatbelt sandbox on. **Never run against the live provider**: there was no API key on the machine. `chat` has only been exercised through the scripted model in the tests.
+On 2026-11-03, on macOS 27.0.1 with Bun 1.4.3: `bun test` here (10 tests) and `bun main.ts run pipelines/hello.json --offline`, both against the engine binary with the Seatbelt sandbox on. **Never run against the live provider**: there was no API key on the machine. `chat` has only been exercised through the scripted model in the tests.

@@ -42,6 +42,8 @@ describe("stream.update over the protocol", () => {
     expect(got.status).toBe("pending_approval");
     expect(got.pipeline.processors[0].urls).toEqual([A]);
     expect(got.pending.permissions_hash).toBe(update.permissions_hash);
+    // A host that restarted shows the same card the update produced.
+    expect(got.pending.diff).toEqual(update.diff);
     expect(got.previous_pipeline.processors[0].urls).toEqual([A]);
   });
 

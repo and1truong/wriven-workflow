@@ -112,7 +112,7 @@ A model can go from nothing to a pending automation with `workflow_list_componen
 Approval happens on create and on widening edits, not per run (sidecar decision 13). `stream.update` returns one of:
 
 - `status` unchanged, no `diff`: within what was approved; nothing to show.
-- `status: "pending_approval"` with `diff: { added, removed }` and a new `permissions_hash`: show the diff and approve as above. Until then the stream cannot run. `stream.changed` tells you this happened, since the call usually comes from the model. `stream.get` returns `pending`, so the card can come back after a restart.
+- `status: "pending_approval"` with `diff: { added, removed }` and a new `permissions_hash`: show the diff and approve as above. Until then the stream cannot run. `stream.changed` tells you this happened, since the call usually comes from the model. `stream.get` returns `pending` with the same `diff`, so the card can come back after a restart.
 
 Offer rollback through `previous_pipeline` from `stream.get`: `stream.update` with exactly that pipeline applies without approval.
 
