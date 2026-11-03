@@ -107,7 +107,7 @@ This is the inverse of `collect`: a model that returns a JSON list (after a pars
   - for every other v0 component, one input message.
   - A new component states its unit in its own spec.
 - **Catch receives** the unit as it was when the failing step received it, with three metadata keys set: `error_step` (the failing step's id), `error_code` and `error_message`. Anything else the unit produced inside `steps` is discarded.
-- **Output.** The output of `steps`, followed by the output of `catch`, as one batch. Shape: the two merged.
+- **Output.** The output of `steps`, followed by the output of `catch`, as one batch. Shape: the two merged. `catch` itself validates against the merge of the shapes the top-level steps of `steps` receive, since a unit fails at one of them; when `steps` holds a container, against `unknown`.
 - **`catch` missing.** A failure fails the run, so `try` without `catch` only groups steps. **`catch: []`**: the failed units are dropped, deliberately.
 - **What can be caught**: the failures `on_error: skip` can skip today, generalised to every component. That is, processor errors attributable to one unit: fetch failures, `permission_denied` on a redirect, feed parse errors, `unresolved_pointer`, `condition_type_mismatch`, a non-array at `split`.
 - **What cannot be caught**: typed errors from the host at `host_llm` or `host_result`, `budget_exceeded`, `timed_out`, `memory_limit`, `cancelled`, `fixture_missing` (a mistake in the test, as `http_fetch` already treats it) and `internal`. These end the run as before. Otherwise `catch` would be a back door around "no retry, no fallback by default".

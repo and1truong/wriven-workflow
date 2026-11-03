@@ -14,7 +14,7 @@ From [composition](../specs/composition.md). Each ticket updates the specs its "
 4. [composition-04-concurrent-host-llm](completed/2026w45/composition-04-concurrent-host-llm.md) (done) — `llm_concurrency` capability, reserved budget, concurrent `for_each`, harness clamp, conformance case.
 5. [composition-05-switch-shape-merging](completed/2026w45/composition-05-switch-shape-merging.md) (done) — `switch` with its ordering rule; shape merging.
 6. [composition-06-unit-failures-try](completed/2026w45/composition-06-unit-failures-try.md) (done) — per-unit failure reporting in every processor; `try` with no or empty `catch`; `on_error: skip` as sugar; `skips_failed_items`.
-7. [composition-07-catch-worked-example](composition-07-catch-worked-example.md) — `catch` with error metadata; `handles_failed_items`; the spec's worked example end to end.
+7. [composition-07-catch-worked-example](completed/2026w45/composition-07-catch-worked-example.md) (done) — `catch` with error metadata; `handles_failed_items`; the spec's worked example end to end.
 8. [composition-08-while](composition-08-while.md) — `while`, `changes_message_ids`, iteration-qualified `host.llm` keys.
 9. [composition-09-workflow](composition-09-workflow.md) — DAG of branches, exact dependency inference, `cycle`, `write_conflict`, skips.
 

@@ -25,7 +25,8 @@ export interface CheckContext {
   requirePointer(field: string, pointer: string, shape: Shape): Shape | null;
   requireString(field: string, pointer: string, shape: Shape): void;
   // Validates a nested step list (at `<path>/<field>/<i>`) from `shape`, returning the shape it emits.
-  checkSteps(field: string, steps: any[], shape: Shape): Shape;
+  // `before` collects the shape each top-level step of the list receives.
+  checkSteps(field: string, steps: any[], shape: Shape, before?: Shape[]): Shape;
 }
 
 // Walks sleeps along one path for `sleep_exceeds_timeout`. `elapsed` is the worst-case time before the

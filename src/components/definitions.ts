@@ -279,16 +279,24 @@ const tryDef: ComponentDef = {
   type: "try",
   kind: "processor",
   summary:
-    "Run steps; a unit that fails at one of them (one URL of http_fetch, one message elsewhere) leaves steps while the rest carry on. catch: [] drops failed units and reports each; without catch a failure fails the run as if there were no try. Errors from the host, limits, timeouts and cancellation are never caught.",
+    "Run steps; a unit that fails at one of them (one URL of http_fetch, one message elsewhere) leaves steps while the rest carry on. With catch steps, each failed unit goes through them as the failing step saw it, with meta error_step, error_code and error_message; their output follows the steps' output. catch: [] drops failed units and reports each; without catch a failure fails the run as if there were no try. Errors from the host, limits, timeouts and cancellation are never caught.",
   properties: { steps: stepList, catch: optionalSteps },
   required: ["steps"],
   preservesIds: true,
   children: (config) => [{ field: "steps", steps: config.steps }, ...(config.catch !== undefined ? [{ field: "catch", steps: config.catch }] : [])],
   walk(config, shape, ctx) {
-    return ctx.checkSteps("steps", config.steps, shape);
+    const before: Shape[] = [];
+    const out = ctx.checkSteps("steps", config.steps, shape, before);
+    if (!Array.isArray(config.catch) || config.catch.length === 0) return out;
+    // catch gets a unit as its failing step saw it: the input of any step, or of a step nested in a
+    // container, whose shape is not tracked here.
+    const nested = (config.steps as any[]).some((s) => COMPONENT_BY_TYPE.get(s.type)?.children !== undefined);
+    const unit = nested ? UNKNOWN : before.reduce((a, b) => mergeShapes(a, b));
+    return mergeShapes(out, ctx.checkSteps("catch", config.catch, unit));
   },
   permissions(config, draft) {
     if (Array.isArray(config.catch) && config.catch.length === 0) draft.skips_failed_items = true;
+    if (Array.isArray(config.catch) && config.catch.length > 0) draft.handles_failed_items = true;
   },
 };
 

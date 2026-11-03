@@ -223,10 +223,12 @@ const tryProcessor: Processor = async (config, batch, ctx) => {
   if (config.catch === undefined) return ctx.runSteps(config.steps, batch);
   const failed: Message[] = [];
   const out = await ctx.runSteps(config.steps, batch, (unit, err, stepId) => {
-    failed.push(unit);
     ctx.warnFor({ step_id: stepId, message_id: unit.id, code: err.kind, message: err.message, caught_by: ctx.stepId });
+    failed.push({ ...unit, meta: { ...unit.meta, error_step: stepId, error_code: err.kind, error_message: err.message } });
   });
-  return out;
+  if (config.catch.length === 0 || failed.length === 0) return out;
+  // Failures inside catch go wherever this try's own failures go.
+  return [...out, ...(await ctx.runSteps(config.catch, failed))];
 };
 
 const PROCESSORS: Record<string, Processor> = { http_fetch: httpFetch, parse_feed: parseFeed, dedupe, collect, template, host_llm: hostLlm, filter, split, log, sleep, for_each: forEach, switch: switchProcessor, try: tryProcessor };

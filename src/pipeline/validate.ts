@@ -70,9 +70,10 @@ export function validatePipeline(document: unknown, ctx: ValidationContext): Val
   checkLimits(pipeline.limits, ctx.ceilings, errors);
 
   // Walk the pipeline in order, carrying the shape of the data; containers walk their own lists.
-  const walkList = (steps: any[], basePath: string, start: Shape): Shape => {
+  const walkList = (steps: any[], basePath: string, start: Shape, before?: Shape[]): Shape => {
     let shape = start;
     steps.forEach((config, i) => {
+      before?.push(shape);
       shape = walkStep(config, `${basePath}/${i}`, shape);
     });
     return shape;
@@ -213,7 +214,7 @@ function checkContext(
   ctx: ValidationContext,
   errors: PipelineIssue[],
   warnings: PipelineIssue[],
-  walkList: (steps: any[], basePath: string, shape: Shape) => Shape,
+  walkList: (steps: any[], basePath: string, shape: Shape, before?: Shape[]) => Shape,
 ): CheckContext {
   const requirePointer = (field: string, pointer: string, shape: Shape): Shape | null => {
     const found = shapeAt(shape, pointer);
@@ -228,7 +229,7 @@ function checkContext(
     error: (code, field, message) => errors.push({ path: `${path}/${field}`, code, message }),
     warning: (code, field, message) => warnings.push({ path: `${path}/${field}`, code, message }),
     requirePointer,
-    checkSteps: (field, steps, shape) => walkList(steps, `${path}/${field}`, shape),
+    checkSteps: (field, steps, shape, before) => walkList(steps, `${path}/${field}`, shape, before),
     requireString(field, pointer, shape) {
       const found = requirePointer(field, pointer, shape);
       if (found && found.kind !== "string" && found.kind !== "unknown") {

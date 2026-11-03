@@ -1,0 +1,167 @@
+{
+  "format": "wriven-workflow/pipeline@1",
+  "name": "Morning digest by kind",
+  "description": "New posts about alpha or beta from three feeds, classified one by one, in one digest that names any feed it could not read.",
+  "input": {
+    "type": "host_trigger"
+  },
+  "processors": [
+    {
+      "id": "sources",
+      "type": "try",
+      "steps": [
+        {
+          "id": "fetch",
+          "type": "http_fetch",
+          "urls": [
+            "https://example.com/feed.xml",
+            "https://blog.example.org/rss",
+            "https://news.example.net/atom.xml"
+          ]
+        },
+        {
+          "id": "parse",
+          "type": "parse_feed"
+        },
+        {
+          "id": "new_only",
+          "type": "dedupe",
+          "key": "/id",
+          "remember": "90d"
+        },
+        {
+          "id": "topic",
+          "type": "filter",
+          "keep_if": {
+            "field": "/title",
+            "contains_any": [
+              "alpha",
+              "beta"
+            ],
+            "case": "insensitive"
+          }
+        }
+      ],
+      "catch": [
+        {
+          "id": "failure_note",
+          "type": "template",
+          "target": "/title",
+          "text": "Could not read {{meta:source_url}} today: {{meta:error_message}}"
+        }
+      ]
+    },
+    {
+      "id": "classify_each",
+      "type": "for_each",
+      "concurrency": 4,
+      "steps": [
+        {
+          "id": "classify_prompt",
+          "type": "template",
+          "target": "/prompt",
+          "missing": "empty",
+          "text": "One word, news or tutorial: {{/title}} {{/summary}}"
+        },
+        {
+          "id": "classify",
+          "type": "host_llm",
+          "prompt": "/prompt",
+          "target": "/kind"
+        }
+      ]
+    },
+    {
+      "id": "gather",
+      "type": "collect",
+      "min_items": 1,
+      "max_items": 50
+    },
+    {
+      "id": "prompt",
+      "type": "template",
+      "target": "/prompt",
+      "text": "Write a digest grouped by /kind. Mention unreadable feeds at the end.\n\n{{/items}}"
+    },
+    {
+      "id": "summarize",
+      "type": "host_llm",
+      "prompt": "/prompt",
+      "target": "/summary"
+    }
+  ],
+  "output": {
+    "type": "host_result",
+    "title": "Morning digest",
+    "body": "/summary",
+    "format": "markdown"
+  },
+  "limits": {
+    "llm_calls_per_run": 31,
+    "runs_per_day": 2,
+    "run_timeout": "5m"
+  },
+  "tests": [
+    {
+      "name": "matching posts are classified and digested",
+      "fixtures": {
+        "https://example.com/feed.xml": {
+          "status": 200,
+          "content_type": "application/rss+xml",
+          "body": "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Alpha</title><item><title>Alpha a1</title><guid>a1</guid></item><item><title>Alpha a2</title><guid>a2</guid></item></channel></rss>"
+        },
+        "https://blog.example.org/rss": {
+          "status": 200,
+          "content_type": "application/rss+xml",
+          "body": "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Beta</title><item><title>Beta b1</title><guid>b1</guid></item></channel></rss>"
+        },
+        "https://news.example.net/atom.xml": {
+          "status": 200,
+          "content_type": "application/rss+xml",
+          "body": "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Gamma</title><item><title>Gamma g1</title><guid>g1</guid></item></channel></rss>"
+        }
+      },
+      "llm": {
+        "mode": "mock",
+        "responses": [
+          "news"
+        ]
+      },
+      "expect": {
+        "status": "succeeded",
+        "results_count": 1,
+        "warnings_count": 0
+      }
+    },
+    {
+      "name": "a feed that is down is noted, not dropped",
+      "fixtures": {
+        "https://example.com/feed.xml": {
+          "status": 200,
+          "content_type": "application/rss+xml",
+          "body": "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Alpha</title><item><title>Alpha a1</title><guid>a1</guid></item><item><title>Alpha a2</title><guid>a2</guid></item></channel></rss>"
+        },
+        "https://blog.example.org/rss": {
+          "status": 200,
+          "content_type": "application/rss+xml",
+          "body": "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Beta</title><item><title>Beta b1</title><guid>b1</guid></item></channel></rss>"
+        },
+        "https://news.example.net/atom.xml": {
+          "status": 503,
+          "body": "down"
+        }
+      },
+      "llm": {
+        "mode": "mock",
+        "responses": [
+          "news"
+        ]
+      },
+      "expect": {
+        "status": "succeeded",
+        "results_count": 1,
+        "warnings_count": 1
+      }
+    }
+  ]
+}
