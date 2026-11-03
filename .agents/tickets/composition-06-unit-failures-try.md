@@ -17,7 +17,7 @@
   - [permissions](../specs/permissions.md): the new field.
   - [pipeline-format](../specs/pipeline-format.md): `try`.
 
-**Blocked by:** [composition-03](composition-03-nested-steps-for-each.md).
+**Blocked by:** [composition-03](completed/2026w45/composition-03-nested-steps-for-each.md).
 
 **Verification:**
 - **`try` around `http_fetch` (3 fixture URLs, one returning 503) and `parse_feed`:**

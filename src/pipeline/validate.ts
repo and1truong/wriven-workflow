@@ -1,7 +1,7 @@
 // `pipeline.validate`: total validation with coded errors and paths. Never touches network or state.
 
 import { COMPONENT_BY_TYPE, componentSchema } from "../components/definitions.ts";
-import type { CheckContext, ComponentKind, PipelineIssue } from "../components/types.ts";
+import type { CheckContext, ComponentKind, PipelineIssue, SleepWalk } from "../components/types.ts";
 import { COMPILED_CEILINGS, type Ceilings } from "./ceilings.ts";
 import { permissionsHash } from "./canonical.ts";
 import { parseDuration } from "./duration.ts";
@@ -10,6 +10,7 @@ import { derivePermissions, type Permissions } from "./permissions.ts";
 import { DEFAULT_DISPLAY_NAME, renderPermissions, type RenderContext } from "./render.ts";
 import { TOP_LEVEL_SCHEMA } from "./schema.ts";
 import { describeShape, shapeAt, UNKNOWN, type Shape } from "./shape.ts";
+import { allSteps, childLists, STRUCTURE_LIMITS } from "./tree.ts";
 
 export interface ValidationContext extends RenderContext {
   clock: "host" | "engine";
@@ -59,30 +60,33 @@ export function validatePipeline(document: unknown, ctx: ValidationContext): Val
   const pipeline = document as any;
 
   checkComponent(pipeline.input, "input", "/input", errors);
-  pipeline.processors.forEach((p: any, i: number) => checkComponent(p, "processor", `/processors/${i}`, errors));
+  checkStepSchemas(pipeline.processors, "/processors", errors);
   checkComponent(pipeline.output, "output", "/output", errors);
-  const seen = new Set<string>();
-  pipeline.processors.forEach((p: any, i: number) => {
-    if (seen.has(p.id)) errors.push({ path: `/processors/${i}/id`, code: "schema", message: `The id ${p.id} is used twice.` });
-    seen.add(p.id);
-  });
+  if (errors.length > 0) return failed();
+  checkStructure(pipeline, errors);
   if (errors.length > 0) return failed();
 
   checkEnvironment(pipeline, ctx, errors);
   checkLimits(pipeline.limits, ctx.ceilings, errors);
 
-  // Walk the pipeline in order, carrying the shape of the data.
-  let shape: Shape = UNKNOWN;
-  const steps: Array<[any, string]> = [
-    [pipeline.input, "/input"],
-    ...pipeline.processors.map((p: any, i: number) => [p, `/processors/${i}`] as [any, string]),
-    [pipeline.output, "/output"],
-  ];
-  for (const [config, path] of steps) {
+  // Walk the pipeline in order, carrying the shape of the data; containers walk their own lists.
+  const walkList = (steps: any[], basePath: string, start: Shape): Shape => {
+    let shape = start;
+    steps.forEach((config, i) => {
+      shape = walkStep(config, `${basePath}/${i}`, shape);
+    });
+    return shape;
+  };
+  const walkStep = (config: any, path: string, shape: Shape): Shape => {
     const def = COMPONENT_BY_TYPE.get(config.type)!;
-    def.check?.(config, shape, checkContext(path, pipeline, ctx, errors, warnings));
-    shape = def.outputShape?.(config, shape) ?? shape;
-  }
+    const stepCtx = checkContext(path, pipeline, ctx, errors, warnings, walkList);
+    if (def.walk) return def.walk(config, shape, stepCtx);
+    def.check?.(config, shape, stepCtx);
+    return def.outputShape?.(config, shape) ?? shape;
+  };
+  let shape = walkStep(pipeline.input, "/input", UNKNOWN);
+  shape = walkList(pipeline.processors, "/processors", shape);
+  walkStep(pipeline.output, "/output", shape);
   if (errors.length > 0) return failed();
 
   checkTopLevelSchedule(pipeline, errors);
@@ -106,15 +110,40 @@ export function validatePipeline(document: unknown, ctx: ValidationContext): Val
   };
 }
 
-function checkComponent(config: any, kind: ComponentKind, path: string, errors: PipelineIssue[]): void {
+// Returns whether the component's own schema passed, so a container's lists are only checked then.
+function checkComponent(config: any, kind: ComponentKind, path: string, errors: PipelineIssue[]): boolean {
   const def = COMPONENT_BY_TYPE.get(config?.type);
   if (!def || def.kind !== kind) {
     const known = [...COMPONENT_BY_TYPE.values()].filter((c) => c.kind === kind).map((c) => c.type);
     errors.push({ path: `${path}/type`, code: "schema", message: `${JSON.stringify(config?.type)} is not ${kind === "input" ? "an" : "a"} ${kind} component; these exist: ${known.join(", ")}.` });
-    return;
+    return false;
   }
-  for (const error of checkSchema(componentSchema(def), config, path)) {
-    errors.push({ path: error.path, code: schemaCode(error), message: error.message });
+  const found = checkSchema(componentSchema(def), config, path);
+  for (const error of found) errors.push({ path: error.path, code: schemaCode(error), message: error.message });
+  return found.length === 0;
+}
+
+function checkStepSchemas(steps: any[], basePath: string, errors: PipelineIssue[]): void {
+  steps.forEach((config, i) => {
+    const path = `${basePath}/${i}`;
+    if (!checkComponent(config, "processor", path, errors)) return;
+    for (const list of childLists(config)) checkStepSchemas(list.steps, `${path}/${list.field}`, errors);
+  });
+}
+
+// Ids unique across the whole tree, nesting depth and step count within the compiled-in limits.
+function checkStructure(pipeline: any, errors: PipelineIssue[]): void {
+  const steps = allSteps(pipeline);
+  const seen = new Set<string>();
+  for (const step of steps) {
+    if (seen.has(step.config.id)) errors.push({ path: `${step.path}/id`, code: "duplicate_id", message: `The id ${step.config.id} is used twice; step ids are unique across the whole pipeline, nested steps included.` });
+    seen.add(step.config.id);
+    if (step.depth === STRUCTURE_LIMITS.nesting_depth + 1) {
+      errors.push({ path: step.path, code: "nesting_too_deep", message: `This step is inside ${step.depth} containers; at most ${STRUCTURE_LIMITS.nesting_depth} may nest.` });
+    }
+  }
+  if (steps.length > STRUCTURE_LIMITS.steps) {
+    errors.push({ path: "/processors", code: "too_many_steps", message: `The pipeline has ${steps.length} steps, nested ones included; at most ${STRUCTURE_LIMITS.steps} are allowed.` });
   }
 }
 
@@ -131,10 +160,9 @@ function checkEnvironment(pipeline: any, ctx: ValidationContext, errors: Pipelin
   if (pipeline.input.type === "inject" && !ctx.testing) {
     errors.push({ path: "/input/type", code: "input_not_allowed", message: "inject is only for tests; a stream needs host_trigger or schedule." });
   }
-  const types = pipeline.processors.map((p: any) => p.type);
-  if (types.includes("host_llm") && !ctx.capabilities.llm) {
-    const index = types.indexOf("host_llm");
-    errors.push({ path: `/processors/${index}/type`, code: "capability_missing", message: "This host does not serve model calls, so host_llm cannot be used." });
+  const llm = allSteps(pipeline).find((s) => s.config.type === "host_llm");
+  if (llm && !ctx.capabilities.llm) {
+    errors.push({ path: `${llm.path}/type`, code: "capability_missing", message: "This host does not serve model calls, so host_llm cannot be used." });
   }
   if (pipeline.output.type === "host_result" && !ctx.capabilities.results) {
     errors.push({ path: "/output/type", code: "capability_missing", message: "This host does not accept results, so host_result cannot be used." });
@@ -144,14 +172,26 @@ function checkEnvironment(pipeline: any, ctx: ValidationContext, errors: Pipelin
 // Sleeps along one path must leave the run time to finish: a pipeline that cannot is invalid, not slow.
 function checkSleeps(pipeline: any, errors: PipelineIssue[]): void {
   const timeout = parseDuration(pipeline.limits.run_timeout);
-  let total = 0;
-  pipeline.processors.forEach((p: any, i: number) => {
-    if (p.type !== "sleep") return;
-    total += parseDuration(p.duration);
-    if (total >= timeout && total - parseDuration(p.duration) < timeout) {
-      errors.push({ path: `/processors/${i}/duration`, code: "sleep_exceeds_timeout", message: `Sleeps along this path add up to ${Math.round(total / 1000)}s, which is not below run_timeout ${pipeline.limits.run_timeout}.` });
-    }
-  });
+  const walk = (steps: any[], basePath: string, start: number, factor: number): number => {
+    let elapsed = start;
+    steps.forEach((config, i) => {
+      const path = `${basePath}/${i}`;
+      if (config.type === "sleep") {
+        const next = elapsed + parseDuration(config.duration) * factor;
+        if (next >= timeout && elapsed < timeout) {
+          errors.push({ path: `${path}/duration`, code: "sleep_exceeds_timeout", message: `Sleeps along this path can add up to ${Math.round(next / 1000)}s, which is not below run_timeout ${pipeline.limits.run_timeout}.` });
+        }
+        elapsed = next;
+        return;
+      }
+      const def = COMPONENT_BY_TYPE.get(config.type)!;
+      const inner: SleepWalk = (field, list, e, f) => walk(list, `${path}/${field}`, e, f);
+      if (def.sleepWalk) elapsed = def.sleepWalk(config, inner, elapsed, factor);
+      else for (const list of childLists(config)) elapsed = inner(list.field, list.steps, elapsed, factor);
+    });
+    return elapsed;
+  };
+  walk(pipeline.processors, "/processors", 0, 1);
 }
 
 function checkLimits(limits: any, ceilings: Ceilings, errors: PipelineIssue[]): void {
@@ -167,7 +207,14 @@ function checkLimits(limits: any, ceilings: Ceilings, errors: PipelineIssue[]): 
   }
 }
 
-function checkContext(path: string, pipeline: any, ctx: ValidationContext, errors: PipelineIssue[], warnings: PipelineIssue[]): CheckContext {
+function checkContext(
+  path: string,
+  pipeline: any,
+  ctx: ValidationContext,
+  errors: PipelineIssue[],
+  warnings: PipelineIssue[],
+  walkList: (steps: any[], basePath: string, shape: Shape) => Shape,
+): CheckContext {
   const requirePointer = (field: string, pointer: string, shape: Shape): Shape | null => {
     const found = shapeAt(shape, pointer);
     if (found.found) return found.shape;
@@ -181,6 +228,7 @@ function checkContext(path: string, pipeline: any, ctx: ValidationContext, error
     error: (code, field, message) => errors.push({ path: `${path}/${field}`, code, message }),
     warning: (code, field, message) => warnings.push({ path: `${path}/${field}`, code, message }),
     requirePointer,
+    checkSteps: (field, steps, shape) => walkList(steps, `${path}/${field}`, shape),
     requireString(field, pointer, shape) {
       const found = requirePointer(field, pointer, shape);
       if (found && found.kind !== "string" && found.kind !== "unknown") {

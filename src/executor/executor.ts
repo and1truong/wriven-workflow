@@ -6,6 +6,7 @@ import { deliver, processorFor, type StepContext } from "../components/runtime.t
 import { RpcError } from "../protocol/errors.ts";
 import { StepError, type Message, type RunInit, type RunOutcome } from "./messages.ts";
 import { RunState } from "./run-state.ts";
+import { childLists, walkSteps } from "../pipeline/tree.ts";
 
 export interface ExecutorWorld {
   signal: AbortSignal;
@@ -17,7 +18,17 @@ export interface ExecutorWorld {
   network(host: string, bytes: number): void;
   denied(host: string): void;
   stepStarted(stepId: string): void;
-  stepFinished(step: { step_id: string; in: number; out: number; dropped: number; duration_ms: number }): void;
+  stepFinished(step: { step_id: string; in: number; out: number; dropped: number; duration_ms: number; parent?: string; invocations?: number }): void;
+}
+
+interface NestedStats {
+  step_id: string;
+  parent: string;
+  in: number;
+  out: number;
+  dropped: number;
+  duration_ms: number;
+  invocations: number;
 }
 
 function inputMessages(init: RunInit): Message[] {
@@ -36,8 +47,12 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
   let slept = 0;
   const now = () => new Date((clockStart === null ? Date.now() : clockStart + (Date.now() - startedAt)) + slept);
   let stepId = "input";
+  // The innermost step a failure came from; containers rethrow what their steps threw.
+  let failedAt: string | null = null;
   let state: RunState;
   let touched = false;
+  // Nested steps run once per invocation of their container; the report sums them.
+  const nested = new Map<string, NestedStats>();
   const context = (id: string): StepContext => ({
     runId: init.run_id,
     stepId: id,
@@ -53,6 +68,7 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
       if (init.trigger === "test") slept += ms;
       else await abortableSleep(ms, world.signal);
     },
+    runSteps: (steps, batch) => runList(steps, batch, id),
     llm: world.llm,
     result: world.result,
     fetcher: world.fetcher,
@@ -60,20 +76,48 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
     denied: world.denied,
     bypassAllowlistCheck: init.test_hook?.bypass_allowlist_check === true,
   });
+  const runStep = async (config: any, batch: Message[], parent: string | null): Promise<Message[]> => {
+    throwIfCancelled(world.signal);
+    stepId = config.id;
+    world.stepStarted(config.id);
+    const started = Date.now();
+    let out: Message[];
+    try {
+      out = await processorFor(config.type)(config, batch, context(config.id));
+    } catch (err) {
+      failedAt ??= config.id;
+      throw err;
+    }
+    const counts = { in: batch.length, out: out.length, dropped: Math.max(0, batch.length - out.length), duration_ms: Date.now() - started };
+    if (parent === null) {
+      world.stepFinished({ step_id: config.id, ...counts });
+      // A container's own entry first, then the steps it holds in document order.
+      for (const inner of walkSteps(childLists(config).flatMap((l) => l.steps), "")) {
+        const stats = nested.get(inner.config.id);
+        if (stats) world.stepFinished(stats);
+      }
+    } else {
+      const stats = nested.get(config.id) ?? { step_id: config.id, parent, in: 0, out: 0, dropped: 0, duration_ms: 0, invocations: 0 };
+      stats.in += counts.in;
+      stats.out += counts.out;
+      stats.dropped += counts.dropped;
+      stats.duration_ms += counts.duration_ms;
+      stats.invocations++;
+      nested.set(config.id, stats);
+    }
+    return out;
+  };
+  const runList = async (steps: any[], batch: Message[], parent: string | null): Promise<Message[]> => {
+    let current = batch;
+    for (const config of steps) current = await runStep(config, current, parent);
+    return current;
+  };
   const noState = { committed: false, dedupe_keys: 0 };
   try {
     state = new RunState(init.state_path, init.initial_state);
     let batch = inputMessages(init);
     world.stepFinished({ step_id: "input", in: 0, out: batch.length, dropped: 0, duration_ms: 0 });
-    for (const config of init.pipeline.processors) {
-      throwIfCancelled(world.signal);
-      stepId = config.id;
-      world.stepStarted(stepId);
-      const started = Date.now();
-      const incoming = batch.length;
-      batch = await processorFor(config.type)(config, batch, context(stepId));
-      world.stepFinished({ step_id: stepId, in: incoming, out: batch.length, dropped: Math.max(0, incoming - batch.length), duration_ms: Date.now() - started });
-    }
+    batch = await runList(init.pipeline.processors, batch, null);
     throwIfCancelled(world.signal);
     stepId = "output";
     world.stepStarted(stepId);
@@ -85,7 +129,7 @@ export async function execute(init: RunInit, world: ExecutorWorld): Promise<RunO
     const committed = state.commit(touched);
     return { status: "succeeded", error: null, state: { committed, dedupe_keys: state.keyCount } };
   } catch (err) {
-    return { status: cancelledBy(err, world.signal) ? "cancelled" : "failed", error: describe(err, stepId), state: noState };
+    return { status: cancelledBy(err, world.signal) ? "cancelled" : "failed", error: describe(err, failedAt ?? stepId), state: noState };
   }
 }
 

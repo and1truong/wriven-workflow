@@ -12,7 +12,7 @@
 - **`components.list`.** States the no-`default` pass-through in one sentence.
 - **Spec update.** [pipeline-format](../specs/pipeline-format.md): `switch`.
 
-**Blocked by:** [composition-03](composition-03-nested-steps-for-each.md).
+**Blocked by:** [composition-03](completed/2026w45/composition-03-nested-steps-for-each.md).
 
 **Verification:**
 - **Routing and order:**

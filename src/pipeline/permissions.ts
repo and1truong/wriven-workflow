@@ -3,6 +3,7 @@
 
 import { COMPONENT_BY_TYPE } from "../components/definitions.ts";
 import { parseDuration } from "./duration.ts";
+import { allSteps } from "./tree.ts";
 
 export interface Permissions {
   version: 1;
@@ -40,7 +41,8 @@ export function derivePermissions(pipeline: any): Permissions {
     fetched: false,
     llmLimits: pipeline.limits,
   };
-  for (const component of [pipeline.input, ...pipeline.processors, pipeline.output]) {
+  // Document order: a container before the steps it holds.
+  for (const component of [pipeline.input, ...allSteps(pipeline).map((s) => s.config), pipeline.output]) {
     COMPONENT_BY_TYPE.get(component.type)?.permissions?.(component, draft);
   }
   draft.network.sort((a, b) => (a.host < b.host ? -1 : a.host > b.host ? 1 : 0));

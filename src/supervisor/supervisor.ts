@@ -15,6 +15,7 @@ import type { Permissions } from "../pipeline/permissions.ts";
 import { startProxy, type ProxyOptions, type RunProxy } from "./proxy.ts";
 import { generateProfile, programPaths } from "./seatbelt.ts";
 import type { RunInit, RunOutcome } from "../executor/messages.ts";
+import { allSteps, stepById } from "../pipeline/tree.ts";
 import type { ReportError, ReportLog, ReportStep, ReportWarning, RunReport, RunTrigger } from "../report.ts";
 
 export const CANCEL_GRACE_MS = 5000;
@@ -276,7 +277,10 @@ export class RunProcess {
     if (method === "step.started") {
       this.currentStep = bounded(params.step_id);
     } else if (method === "step.finished") {
-      if (this.steps.length < this.job.pipeline.processors.length + 2) this.steps.push({ ...params, step_id: bounded(params.step_id) } as ReportStep);
+      if (this.steps.length < allSteps(this.job.pipeline).length + 2) {
+        const { parent, invocations, ...counts } = params;
+        this.steps.push({ ...counts, step_id: bounded(params.step_id), ...(parent !== undefined ? { parent: bounded(parent), invocations: Number(invocations) || 0 } : {}) } as ReportStep);
+      }
     } else if (method === "warning") {
       if (this.warnings.length >= MAX_WARNINGS) this.warningsOmitted++;
       else this.warnings.push({ step_id: bounded(params.step_id), message_id: params.message_id === null ? null : bounded(params.message_id), code: bounded(params.code), message: bounded(params.message) });
@@ -302,9 +306,9 @@ export class RunProcess {
     // What may be asked comes from the pinned permissions and the pipeline. From the run process only
     // the text of the prompt is taken, because a compromised one must not get more than a healthy one.
     const permitted = this.job.permissions.llm;
-    const step = this.job.pipeline.processors.find((p: any) => p.id === params.step_id && p.type === "host_llm");
+    const step = stepById(this.job.pipeline, params.step_id)?.config;
     const prompt = params.messages?.[0]?.content;
-    if (!permitted || !step || typeof prompt !== "string" || typeof params.message_id !== "string") {
+    if (!permitted || step?.type !== "host_llm" || typeof prompt !== "string" || typeof params.message_id !== "string") {
       throw new RpcError("permission_denied", "This stream's permissions do not include that model call.");
     }
     const limit = Math.min(permitted.max_calls_per_run, this.env.ceilings.llm_calls_per_run);

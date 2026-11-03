@@ -16,6 +16,7 @@ const pointer = { type: "string", pattern: POINTER_PATTERN, patternMessage: "Thi
 // Stand-ins resolved by `componentSchema`: a plain object for the engine's own checks, which recurse
 // with better messages, and a $ref into the pipeline schema's $defs when published.
 const conditionRef = { "x-ref": "condition" };
+const stepList = { type: "array", minItems: 1, items: { "x-ref": "processor" } };
 
 export const retrySchema = {
   type: "object",
@@ -220,6 +221,25 @@ const sleep: ComponentDef = {
   },
 };
 
+const forEach: ComponentDef = {
+  type: "for_each",
+  kind: "processor",
+  summary: "Run steps on each message as a batch of one, up to concurrency messages at a time; outputs keep input order. A collect inside sees one message.",
+  properties: {
+    steps: stepList,
+    concurrency: { type: "integer", minimum: 1, maximum: 8 },
+  },
+  required: ["steps"],
+  preservesIds: true,
+  children: (config) => [{ field: "steps", steps: config.steps }],
+  walk(config, shape, ctx) {
+    (config.steps as any[]).forEach((step, i) => {
+      if (step.type === "collect") ctx.warning("per_message_context", `steps/${i}/type`, "collect inside for_each sees one message at a time, so it collects one item.");
+    });
+    return ctx.checkSteps("steps", config.steps, shape);
+  },
+};
+
 const DEFAULT_REMEMBER = "30d";
 const DEFAULT_MAX_KEYS = 10_000;
 
@@ -350,7 +370,7 @@ const drop: ComponentDef = {
 
 export const DEDUPE_DEFAULTS = { remember: DEFAULT_REMEMBER, max_keys: DEFAULT_MAX_KEYS };
 
-export const COMPONENTS: ComponentDef[] = [hostTrigger, schedule, inject, httpFetch, parseFeed, dedupe, collect, template, hostLlm, filter, split, log, sleep, hostResult, drop];
+export const COMPONENTS: ComponentDef[] = [hostTrigger, schedule, inject, httpFetch, parseFeed, dedupe, collect, template, hostLlm, filter, split, log, sleep, forEach, hostResult, drop];
 
 export const COMPONENT_BY_TYPE = new Map(COMPONENTS.map((c) => [c.type, c]));
 

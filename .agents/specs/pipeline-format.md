@@ -46,7 +46,7 @@ Top-level fields:
 | `name` | yes | Shown to the person by the host. 1–80 characters. |
 | `description` | no | Shown to the person. ≤ 500 characters. |
 | `input` | yes | Exactly one input component. |
-| `processors` | yes, may be empty | Ordered list. Each has a unique `id` (`^[a-z][a-z0-9_]{0,31}$`) used in run reports, errors and idempotency keys. |
+| `processors` | yes, may be empty | Ordered list. Each has an `id` (`^[a-z][a-z0-9_]{0,31}$`) used in run reports, errors and idempotency keys, unique across the whole pipeline, steps nested in containers included. |
 | `output` | yes | Exactly one output component. |
 | `limits` | yes | See [Limits](#limits). Missing or out of range is a validation error. |
 | `schedule` | no | Only meaningful when the input is `schedule`; see [scheduling](scheduling.md). Kept at top level so the host can read it without knowing components. |
@@ -94,6 +94,9 @@ Each component states: config fields, what it reads and emits, how it behaves on
 
 Specified in [composition](composition.md), which owns their behaviour; this list records which ones the engine has.
 
+Containers hold step lists; a nested step has the same shape as a top-level processor. At most 4 containers nest and a pipeline has at most 64 steps in all; both are compiled in and reported by `components.list` as `structure`. In the published schema, nested lists and conditions are `$ref`s into `#/$defs/processor` and `#/$defs/condition`.
+
+- **`for_each`**: runs `steps` on each message as a batch of one, outputs in input order. Permission: none of its own.
 - **`filter`**: keeps the messages for which `keep_if`, a [`condition`](composition.md#condition), is true. Permission: none.
 - **`split`**: one message per element of the array at `field`. Permission: none.
 - **`log`**: appends a line per message to the run report's `logs`. Permission: none.
@@ -127,7 +130,7 @@ Engine-wide ceilings (the upper ends above) are compiled in and reported by `com
 
 ## Validation
 
-`pipeline.validate` returns either `{ "valid": true, "permissions": {...}, "warnings": [...] }` or `{ "valid": false, "errors": [ { "path": "/processors/2/key", "code": "unknown_field" | "schema" | "unresolved_pointer" | "limit_out_of_range" | "missing_limits" | "input_not_allowed" | "schedule_requires_engine_clock" | "url_not_allowed" | "shape_mismatch" | "capability_missing" | "sleep_exceeds_timeout", "message": "English sentence" } ] }`.
+`pipeline.validate` returns either `{ "valid": true, "permissions": {...}, "warnings": [...] }` or `{ "valid": false, "errors": [ { "path": "/processors/2/key", "code": "unknown_field" | "schema" | "unresolved_pointer" | "limit_out_of_range" | "missing_limits" | "input_not_allowed" | "schedule_requires_engine_clock" | "url_not_allowed" | "shape_mismatch" | "capability_missing" | "sleep_exceeds_timeout" | "duplicate_id" | "nesting_too_deep" | "too_many_steps", "message": "English sentence" } ] }`.
 
 Checks, in order: JSON Schema of the format version; component schemas; component ordering constraints (`parse_feed` needs a `/body` upstream; `host_llm.prompt` must point at a string-producing field; `collect` after `dedupe` is allowed, before is a warning "dedupe after collect sees one key per batch"); URL rules; pointer resolution against declared shapes; limits; components the host's `capabilities` rule out (`capability_missing`); a `host_llm` present with `llm_calls_per_run: 0` is an error. Warnings never block.
 

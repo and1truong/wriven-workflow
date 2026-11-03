@@ -85,6 +85,6 @@ export function pipelineSchema(): JsonSchema {
       processors: { type: "array", items: ofKind("processor") },
       output: ofKind("output"),
     },
-    $defs: { condition: CONDITION_SCHEMA },
+    $defs: { condition: CONDITION_SCHEMA, processor: ofKind("processor") },
   };
 }

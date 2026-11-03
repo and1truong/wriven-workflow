@@ -17,7 +17,7 @@
   - [permissions](../specs/permissions.md): the derivation rule.
   - [pipeline-format](../specs/pipeline-format.md): `while`, `changes_message_ids`.
 
-**Blocked by:** [composition-01](completed/2026w45/composition-01-condition-filter.md), [composition-02](completed/2026w45/composition-02-split-log-sleep.md), [composition-03](composition-03-nested-steps-for-each.md).
+**Blocked by:** [composition-01](completed/2026w45/composition-01-condition-filter.md), [composition-02](completed/2026w45/composition-02-split-log-sleep.md), [composition-03](completed/2026w45/composition-03-nested-steps-for-each.md).
 
 **Verification:**
 - **Loop limit:**

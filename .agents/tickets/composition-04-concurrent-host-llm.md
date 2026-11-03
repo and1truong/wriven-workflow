@@ -18,7 +18,7 @@
   - [agent-surface](../specs/agent-surface.md): `clamped`.
   - `docs/host-integration.md`: one paragraph on the capability.
 
-**Blocked by:** [composition-03](composition-03-nested-steps-for-each.md).
+**Blocked by:** [composition-03](completed/2026w45/composition-03-nested-steps-for-each.md).
 
 **Verification:**
 - **Concurrency against the fake host** (`llm_concurrency: 4`, `for_each` with `concurrency: 4` over 8 messages):

@@ -33,6 +33,9 @@ export interface ReportStep {
   out: number;
   dropped: number;
   duration_ms: number;
+  // Nested steps only: the container's id, and how many times the step ran; counts are summed.
+  parent?: string;
+  invocations?: number;
 }
 
 export interface RunReport {
@@ -112,7 +115,15 @@ export const REPORT_SCHEMA: JsonSchema = {
       items: {
         type: "object",
         required: ["step_id", "in", "out", "dropped", "duration_ms"],
-        properties: { step_id: { type: "string" }, in: { type: "integer" }, out: { type: "integer" }, dropped: { type: "integer" }, duration_ms: { type: "number" } },
+        properties: {
+          step_id: { type: "string" },
+          in: { type: "integer" },
+          out: { type: "integer" },
+          dropped: { type: "integer" },
+          duration_ms: { type: "number" },
+          parent: { type: "string" },
+          invocations: { type: "integer" },
+        },
       },
     },
     logs: {

@@ -32,6 +32,8 @@ export interface StepContext {
   log(messageId: string, text: string): void;
   // Waits, or under pipeline.test moves the run's clock instead. Cancellation interrupts it.
   sleep(ms: number): Promise<void>;
+  // Runs a container's nested steps on a batch.
+  runSteps(steps: any[], batch: Message[]): Promise<Message[]>;
 }
 
 export type Processor = (config: any, batch: Message[], ctx: StepContext) => Promise<Message[]>;
@@ -146,9 +148,15 @@ const sleep: Processor = async (config, batch, ctx) => {
   return batch;
 };
 
+const forEach: Processor = async (config, batch, ctx) => {
+  const out: Message[] = [];
+  for (const message of batch) out.push(...(await ctx.runSteps(config.steps, [message])));
+  return out;
+};
+
 const filter: Processor = async (config, batch, ctx) => batch.filter((message) => evaluate(config.keep_if, message, ctx.now()));
 
-const PROCESSORS: Record<string, Processor> = { http_fetch: httpFetch, parse_feed: parseFeed, dedupe, collect, template, host_llm: hostLlm, filter, split, log, sleep };
+const PROCESSORS: Record<string, Processor> = { http_fetch: httpFetch, parse_feed: parseFeed, dedupe, collect, template, host_llm: hostLlm, filter, split, log, sleep, for_each: forEach };
 
 export function processorFor(type: string): Processor {
   const processor = PROCESSORS[type];

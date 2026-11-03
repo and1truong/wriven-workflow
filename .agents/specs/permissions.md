@@ -31,7 +31,7 @@ What a stream's permissions are, how the engine computes them from a pipeline, h
 }
 ```
 
-Rules of derivation, per component:
+Rules of derivation, per component. Every step contributes wherever it sits: the engine walks containers in document order, a container before the steps it holds ([composition](composition.md#permissions)). "Precedes" below means earlier in that order.
 
 | Component | Contributes |
 | --- | --- |
